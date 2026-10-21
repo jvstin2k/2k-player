@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/UhfPlayer.App/UhfPlayer.App.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/UhfPlayer.Core/UhfPlayer.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/UhfPlayer.Core.Tests/UhfPlayer.Core.Tests.csproj" />
+  </Folder>
+</Solution>

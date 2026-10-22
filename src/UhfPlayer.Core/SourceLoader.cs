@@ -1,3 +1,5 @@
+using System.Net;
+using System.Web;
 using UhfPlayer.Core.Epg;
 using UhfPlayer.Core.M3u;
 using UhfPlayer.Core.Models;
@@ -13,12 +15,40 @@ public sealed class SourceLoader(HttpClient http)
 
     public async Task<PlaylistResult> LoadChannelsAsync(SourceConfig source, CancellationToken ct = default)
     {
+        if (source.Kind == SourceKind.M3u && FromGetPhpLink(source) is { } xtream)
+            source = xtream;
         if (source.Kind == SourceKind.Xtream)
             return await new XtreamClient(http).LoadLiveAsync(source, ct).ConfigureAwait(false);
 
-        var location = source.M3uLocation ?? throw new ArgumentException("M3U source needs a URL or file path.");
+        var location = WebUtility.HtmlDecode(source.M3uLocation ?? throw new ArgumentException("M3U source needs a URL or file path."));
         using var reader = new StreamReader(await OpenAsync(location, ct).ConfigureAwait(false));
         return await M3uParser.ParseAsync(reader, source.Id, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Xtream panels hand out M3U links like .../get.php?username=u&amp;password=p&amp;type=m3u_plus.
+    /// Loading those through player_api.php gives proper categories and the panel's EPG.
+    /// </summary>
+    internal static SourceConfig? FromGetPhpLink(SourceConfig source)
+    {
+        // Links copied out of HTML or e-mails often carry "&amp;" instead of "&".
+        if (!Uri.TryCreate(WebUtility.HtmlDecode(source.M3uLocation), UriKind.Absolute, out var uri)
+            || !uri.AbsolutePath.EndsWith("/get.php", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var query = HttpUtility.ParseQueryString(uri.Query);
+        if (query["username"] is not { } user || query["password"] is not { } pass)
+            return null;
+
+        var basePath = uri.AbsolutePath[..^"/get.php".Length];
+        return source with
+        {
+            Kind = SourceKind.Xtream,
+            Server = uri.GetLeftPart(UriPartial.Authority) + basePath,
+            Username = user,
+            Password = pass,
+            M3uLocation = null,
+        };
     }
 
     /// <summary>Uses the source's own EPG URL if set, otherwise the first one the playlist advertised.</summary>

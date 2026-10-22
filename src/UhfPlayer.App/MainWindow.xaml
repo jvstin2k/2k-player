@@ -25,12 +25,21 @@
             </Grid.RowDefinitions>
             <TextBlock Text="Gruppen" Style="{StaticResource SubtitleTextBlockStyle}" Margin="8,0,0,8" />
             <ListView x:Name="GroupList" Grid.Row="1" SelectionChanged="OnGroupSelected" />
-            <Button Grid.Row="2" HorizontalAlignment="Stretch" Margin="0,8,0,0" Click="OnAddSource">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <SymbolIcon Symbol="Add" />
-                    <TextBlock Text="Quelle hinzufügen" />
-                </StackPanel>
-            </Button>
+            <Grid Grid.Row="2" Margin="0,8,0,0" ColumnSpacing="4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button HorizontalAlignment="Stretch" Click="OnAddSource">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <SymbolIcon Symbol="Add" />
+                        <TextBlock Text="Quelle hinzufügen" />
+                    </StackPanel>
+                </Button>
+                <Button Grid.Column="1" Click="OnManageSources" ToolTipService.ToolTip="Quellen verwalten">
+                    <SymbolIcon Symbol="Setting" />
+                </Button>
+            </Grid>
         </Grid>
 
         <!-- Channels -->

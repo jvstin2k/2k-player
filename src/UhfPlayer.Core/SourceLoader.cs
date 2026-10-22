@@ -8,6 +8,9 @@ namespace UhfPlayer.Core;
 /// <summary>Loads channels and the EPG for any configured source.</summary>
 public sealed class SourceLoader(HttpClient http)
 {
+    /// <summary>Many IPTV panels reject requests without a User-Agent (.NET sends none) or with an unknown one.</summary>
+    public const string DefaultUserAgent = "VLC/3.0.21 LibVLC/3.0.21";
+
     public async Task<PlaylistResult> LoadChannelsAsync(SourceConfig source, CancellationToken ct = default)
     {
         if (source.Kind == SourceKind.Xtream)

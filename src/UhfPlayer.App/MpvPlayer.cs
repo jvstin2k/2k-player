@@ -40,7 +40,7 @@ internal sealed partial class MpvPlayer : IDisposable
 
     public void Play(string url, string? userAgent, string? referrer)
     {
-        Check(mpv_set_property_string(_ctx, "user-agent", userAgent ?? "libmpv"));
+        Check(mpv_set_property_string(_ctx, "user-agent", userAgent ?? Core.SourceLoader.DefaultUserAgent));
         Check(mpv_set_property_string(_ctx, "referrer", referrer ?? ""));
         Command("loadfile", url, "replace");
         ShowWindow(_hwnd, SW_SHOW);

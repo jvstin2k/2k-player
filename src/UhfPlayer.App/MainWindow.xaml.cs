@@ -12,7 +12,10 @@ public sealed partial class MainWindow : Window
 {
     private const string AllGroups = "Alle Sender";
 
-    private static readonly HttpClient Http = new(new SocketsHttpHandler { AutomaticDecompression = System.Net.DecompressionMethods.All });
+    private static readonly HttpClient Http = new(new SocketsHttpHandler { AutomaticDecompression = System.Net.DecompressionMethods.All })
+    {
+        DefaultRequestHeaders = { { "User-Agent", SourceLoader.DefaultUserAgent } },
+    };
     private readonly SourceLoader _loader = new(Http);
     private readonly List<SourceConfig> _sources = SourceStore.Load();
     private readonly List<Channel> _channels = [];
@@ -83,6 +86,12 @@ public sealed partial class MainWindow : Window
         try
         {
             return (source, await Task.Run(() => _loader.LoadChannelsAsync(source)), null);
+        }
+        catch (HttpRequestException ex) when ((int?)ex.StatusCode is 401 or 403 or 884)
+        {
+            // 884 is a panel-specific code (Xtream UI/XUI) for blocked or over-limit accounts.
+            return (source, new PlaylistResult([], []),
+                $"Zugang abgelehnt (HTTP {(int)ex.StatusCode!}). Prüfe die Zugangsdaten oder ob der Anbieter gerade eine weitere Verbindung erlaubt.");
         }
         catch (Exception ex)
         {
@@ -185,16 +194,39 @@ public sealed partial class MainWindow : Window
             return;
 
         var xtream = kind.SelectedIndex == 1;
+        // Adding the same playlist again replaces it; duplicates would hit the provider in parallel.
+        var username = xtream ? user.Text.Trim() : null;
+        _sources.RemoveAll(s => string.Equals(s.M3uLocation ?? s.Server, location.Text.Trim(), StringComparison.OrdinalIgnoreCase) && s.Username == username);
         _sources.Add(new SourceConfig
         {
             Name = string.IsNullOrWhiteSpace(name.Text) ? location.Text.Trim() : name.Text.Trim(),
             Kind = xtream ? SourceKind.Xtream : SourceKind.M3u,
             M3uLocation = xtream ? null : location.Text.Trim(),
             Server = xtream ? location.Text.Trim() : null,
-            Username = xtream ? user.Text.Trim() : null,
+            Username = username,
             Password = xtream ? pass.Password : null,
             EpgUrl = string.IsNullOrWhiteSpace(epg.Text) ? null : epg.Text.Trim(),
         });
+        SourceStore.Save(_sources);
+        await ReloadAsync();
+    }
+
+    private async void OnManageSources(object sender, RoutedEventArgs e)
+    {
+        var list = new ListView { SelectionMode = ListViewSelectionMode.Multiple, ItemsSource = _sources.Select(s => s.Name).ToList() };
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = "Quellen",
+            PrimaryButtonText = "Markierte entfernen",
+            CloseButtonText = "Schließen",
+            Content = _sources.Count == 0 ? new TextBlock { Text = "Keine Quellen vorhanden." } : list,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary || list.SelectedRanges.Count == 0)
+            return;
+
+        var remove = list.SelectedRanges.SelectMany(r => Enumerable.Range(r.FirstIndex, (int)r.Length)).Select(i => _sources[i]).ToList();
+        _sources.RemoveAll(remove.Contains);
         SourceStore.Save(_sources);
         await ReloadAsync();
     }

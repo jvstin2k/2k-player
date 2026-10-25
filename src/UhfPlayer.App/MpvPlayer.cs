@@ -12,6 +12,11 @@ internal sealed partial class MpvPlayer : IDisposable
     private const string Mpv = "libmpv-2.dll";
     private readonly nint _ctx;
     private readonly nint _hwnd;
+    private readonly Thread _events;
+    private volatile bool _disposed;
+
+    /// <summary>Raised on the mpv event thread when a stream cannot be opened or breaks off.</summary>
+    public event Action<string>? PlaybackFailed;
 
     public MpvPlayer(nint parentHwnd)
     {
@@ -35,7 +40,29 @@ internal sealed partial class MpvPlayer : IDisposable
         Option("demuxer-lavf-analyzeduration", "1");
         Option("cache-pause-initial", "no");
         Option("demuxer-max-bytes", "64MiB");
+        var logDir = Directory.CreateDirectory(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UhfPlayer"));
+        Option("log-file", Path.Combine(logDir.FullName, "mpv.log"));
         Check(mpv_initialize(_ctx));
+
+        _events = new Thread(EventLoop) { IsBackground = true, Name = "mpv events" };
+        _events.Start();
+    }
+
+    // Without this loop, failures after loadfile (bad URL, 401 on the stream, unsupported codec) would go unnoticed.
+    private unsafe void EventLoop()
+    {
+        while (!_disposed)
+        {
+            var ev = (MpvEvent*)mpv_wait_event(_ctx, -1);
+            if (ev->EventId == MPV_EVENT_SHUTDOWN)
+                return;
+            if (ev->EventId == MPV_EVENT_END_FILE && ev->Data != 0)
+            {
+                var end = (MpvEventEndFile*)ev->Data;
+                if (end->Reason == MPV_END_FILE_REASON_ERROR)
+                    PlaybackFailed?.Invoke(Marshal.PtrToStringUTF8(mpv_error_string(end->Error)) ?? "unknown error");
+            }
+        }
     }
 
     public void Play(string url, string? userAgent, string? referrer)
@@ -56,6 +83,9 @@ internal sealed partial class MpvPlayer : IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
+        mpv_wakeup(_ctx);
+        _events.Join();
         mpv_terminate_destroy(_ctx);
         DestroyWindow(_hwnd);
     }
@@ -89,6 +119,26 @@ internal sealed partial class MpvPlayer : IDisposable
     [LibraryImport(Mpv)] private static partial int mpv_initialize(nint ctx);
     [LibraryImport(Mpv)] private static partial void mpv_terminate_destroy(nint ctx);
     [LibraryImport(Mpv)] private static partial nint mpv_error_string(int error);
+    [LibraryImport(Mpv)] private static partial nint mpv_wait_event(nint ctx, double timeout);
+    [LibraryImport(Mpv)] private static partial void mpv_wakeup(nint ctx);
+
+    private const int MPV_EVENT_SHUTDOWN = 1, MPV_EVENT_END_FILE = 7, MPV_END_FILE_REASON_ERROR = 4;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MpvEvent
+    {
+        public int EventId;
+        public int Error;
+        public ulong ReplyUserdata;
+        public nint Data;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MpvEventEndFile
+    {
+        public int Reason;
+        public int Error;
+    }
     [LibraryImport(Mpv)] private static unsafe partial int mpv_command(nint ctx, nint* args);
     [LibraryImport(Mpv, StringMarshalling = StringMarshalling.Utf8)] private static partial int mpv_set_option_string(nint ctx, string name, string data);
     [LibraryImport(Mpv, StringMarshalling = StringMarshalling.Utf8)] private static partial int mpv_set_property_string(nint ctx, string name, string data);

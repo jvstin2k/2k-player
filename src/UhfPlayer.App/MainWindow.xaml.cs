@@ -22,6 +22,7 @@ public sealed partial class MainWindow : Window
     private readonly List<Channel> _channels = [];
     private readonly Dictionary<Guid, EpgGuide> _guides = [];
     private readonly MpvPlayer? _player;
+    private readonly string? _playerError;
     private MediaKind _section = MediaKind.Live;
 
     /// <summary>Episodes of the series being browsed; null while the normal list is shown.</summary>
@@ -39,8 +40,15 @@ public sealed partial class MainWindow : Window
         }
         catch (DllNotFoundException)
         {
-            ShowStatus(InfoBarSeverity.Error, "libmpv-2.dll fehlt. Bitte scripts/fetch-libmpv.ps1 ausführen.");
+            _playerError = "libmpv-2.dll fehlt neben UhfPlayer.App.exe. Bitte scripts/fetch-libmpv.ps1 ausführen und neu bauen.";
         }
+        catch (Exception ex) when (ex is BadImageFormatException or EntryPointNotFoundException or InvalidOperationException)
+        {
+            _playerError = $"Player konnte nicht starten: {ex.Message}";
+        }
+
+        if (_player is not null)
+            _player.PlaybackFailed += error => DispatcherQueue.TryEnqueue(() => ShowStatus(InfoBarSeverity.Error, $"Wiedergabe fehlgeschlagen: {error}"));
 
         Closed += (_, _) => _player?.Dispose();
         _ = ReloadAsync();
@@ -187,7 +195,13 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            _player?.Play(row.Channel.StreamUrl, row.Channel.UserAgent, row.Channel.Referrer);
+            if (_player is null)
+            {
+                // Shown on click because the startup message is replaced by the loading status.
+                ShowStatus(InfoBarSeverity.Error, _playerError ?? "Player nicht verfügbar.");
+                return;
+            }
+            _player.Play(row.Channel.StreamUrl, row.Channel.UserAgent, row.Channel.Referrer);
             UpdateVideoBounds();
         }
         catch (InvalidOperationException ex)

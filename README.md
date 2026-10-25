@@ -18,19 +18,32 @@ dotnet test tests/UhfPlayer.Core.Tests
 dotnet run --project src/UhfPlayer.App -p:Platform=x64
 ```
 
-Quellen werden in `%LOCALAPPDATA%\UhfPlayer\sources.json` gespeichert.
+In `%LOCALAPPDATA%\UhfPlayer` liegen `sources.json` (Quellen), `state.json` (Favoriten, ausgeblendete Gruppen, Weiterschauen, Lautstärke), `crash.log` (Abstürze), `cache\` (Senderlisten und EPG für den Schnellstart) und `mpv.log`.
+
+## Bedienung
+
+| Eingabe | Aktion |
+|---------|--------|
+| Leertaste | Pause |
+| ↑ / ↓ | Vorheriger / nächster Sender |
+| ← / → | 10 s zurück / vor (Filme und Folgen) |
+| F, Doppelklick aufs Bild | Vollbild an/aus |
+| Esc | Vollbild verlassen |
+| M | Ton aus |
+| Mausrad über dem Bild, Regler neben dem Lautsprecher | Lautstärke (wird gespeichert) |
+| Stern in der Liste | Favorit |
+| Rechtsklick auf Kategorie | Kategorie ausblenden (wieder einblenden über das Zahnrad) |
 
 ## Aufbau
 
 | Pfad | Inhalt |
 |------|--------|
 | `src/UhfPlayer.Core/M3u` | M3U-Parser (tvg-*, group-title, `#EXTGRP`, `#EXTVLCOPT`, `url-tvg`) |
-| `src/UhfPlayer.Core/Xtream` | Xtream Codes Live-TV über `player_api.php`, EPG über `xmltv.php` |
+| `src/UhfPlayer.Core/Xtream` | Xtream Codes Live-TV, Filme und Serien über `player_api.php`, EPG über `xmltv.php` |
 | `src/UhfPlayer.Core/Epg` | Streaming-XMLTV-Parser, Jetzt/Danach-Suche |
 | `src/UhfPlayer.App` | WinUI-Oberfläche, `MpvPlayer` (libmpv in einem Child-Fenster) |
 
 ## Bewusst noch nicht drin
 
-- Steuerelemente über dem Video (UHF-Overlay): Das Video ist ein Win32-Child-Fenster, das XAML überdeckt. Nächster Schritt ist ein transparentes Overlay-Fenster.
-- VOD/Serien von Xtream, Favoriten, EPG-Raster, Catch-up, EPG-Cache auf Platte.
+- Catch-up, zuletzt gesehener Sender beim Start.
 - Passwörter liegen im Klartext in `sources.json` (später Windows Credential Locker).

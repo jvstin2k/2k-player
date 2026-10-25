@@ -18,12 +18,15 @@ public sealed class SourceLoader(HttpClient http)
         if (source.Kind == SourceKind.M3u && FromGetPhpLink(source) is { } xtream)
             source = xtream;
         if (source.Kind == SourceKind.Xtream)
-            return await new XtreamClient(http).LoadLiveAsync(source, ct).ConfigureAwait(false);
+            return await new XtreamClient(http).LoadAsync(source, ct).ConfigureAwait(false);
 
         var location = WebUtility.HtmlDecode(source.M3uLocation ?? throw new ArgumentException("M3U source needs a URL or file path."));
         using var reader = new StreamReader(await OpenAsync(location, ct).ConfigureAwait(false));
         return await M3uParser.ParseAsync(reader, source.Id, ct).ConfigureAwait(false);
     }
+
+    public Task<IReadOnlyList<Channel>> LoadEpisodesAsync(SourceConfig source, string seriesId, CancellationToken ct = default)
+        => new XtreamClient(http).LoadEpisodesAsync(FromGetPhpLink(source) ?? source, seriesId, ct);
 
     /// <summary>
     /// Xtream panels hand out M3U links like .../get.php?username=u&amp;password=p&amp;type=m3u_plus.
@@ -51,13 +54,29 @@ public sealed class SourceLoader(HttpClient http)
         };
     }
 
-    /// <summary>Uses the source's own EPG URL if set, otherwise the first one the playlist advertised.</summary>
-    public async Task<EpgGuide> LoadEpgAsync(SourceConfig source, PlaylistResult playlist, CancellationToken ct = default)
+    /// <summary>
+    /// Downloads the XMLTV file (the source's own EPG URL if set, otherwise the first one the playlist advertised)
+    /// into <paramref name="cacheFile"/>, unless the cached copy is younger than <paramref name="maxAge"/>.
+    /// Returns true when a new file was written.
+    /// </summary>
+    public async Task<bool> UpdateEpgCacheAsync(SourceConfig source, PlaylistResult playlist, string cacheFile, TimeSpan maxAge, CancellationToken ct = default)
     {
         var url = source.EpgUrl ?? playlist.EpgUrls.FirstOrDefault();
-        if (url is null)
-            return EpgGuide.Empty;
-        await using var stream = await OpenAsync(url, ct).ConfigureAwait(false);
+        if (url is null || (File.Exists(cacheFile) && File.GetLastWriteTimeUtc(cacheFile) > DateTime.UtcNow - maxAge))
+            return false;
+
+        // Download next to the cache and swap, so a broken download never replaces a good file.
+        var temp = cacheFile + ".download";
+        await using (var download = await OpenAsync(url, ct).ConfigureAwait(false))
+        await using (var target = File.Create(temp))
+            await download.CopyToAsync(target, ct).ConfigureAwait(false);
+        File.Move(temp, cacheFile, overwrite: true);
+        return true;
+    }
+
+    public static async Task<EpgGuide> LoadEpgFileAsync(string path, CancellationToken ct = default)
+    {
+        await using var stream = File.OpenRead(path);
         return await XmlTvParser.ParseAsync(stream, ct).ConfigureAwait(false);
     }
 

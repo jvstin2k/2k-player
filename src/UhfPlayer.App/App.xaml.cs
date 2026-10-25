@@ -6,7 +6,12 @@ public partial class App : Application
 {
     private Window? _window;
 
-    public App() => InitializeComponent();
+    public App()
+    {
+        InitializeComponent();
+        UnhandledException += (_, e) => CrashLog.Write(e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => CrashLog.Write(e.ExceptionObject);
+    }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {

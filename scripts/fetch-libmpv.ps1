@@ -17,4 +17,6 @@ Invoke-WebRequest $asset.browser_download_url -OutFile $archive
 if (Get-Command 7z -ErrorAction SilentlyContinue) { 7z e $archive libmpv-2.dll "-o$target" -y | Out-Null }
 else { tar -xf $archive -C $target libmpv-2.dll }
 Remove-Item $archive
+# Native tools do not throw on failure, so check the result instead of trusting the exit.
+if (-not (Test-Path (Join-Path $target 'libmpv-2.dll'))) { throw "Entpacken fehlgeschlagen. Bitte 7-Zip installieren (https://www.7-zip.org) und das Skript erneut starten." }
 Write-Host "libmpv-2.dll -> $target"

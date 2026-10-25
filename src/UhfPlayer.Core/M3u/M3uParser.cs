@@ -64,9 +64,14 @@ public static class M3uParser
 
             channels.Add(new Channel
             {
-                Id = $"{sourceId:N}:{channels.Count}",
+                // Keyed by URL so favorites and resume positions survive reordered playlists.
+                Id = $"{sourceId:N}:{url}",
                 Name = string.IsNullOrWhiteSpace(entry.Name) ? url : entry.Name,
                 StreamUrl = url,
+                // Xtream-style m3u_plus playlists mix VOD into the list; the URL path tells them apart.
+                Kind = url.Contains("/movie/", StringComparison.OrdinalIgnoreCase) ? MediaKind.Movie
+                    : url.Contains("/series/", StringComparison.OrdinalIgnoreCase) ? MediaKind.Episode
+                    : MediaKind.Live,
                 SourceId = sourceId,
                 Group = entry.Group,
                 LogoUrl = entry.Logo,

@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text;
 using UhfPlayer.Core.Models;
 
 namespace UhfPlayer.Core.Tests;
@@ -24,4 +26,44 @@ public class SourceLoaderTests
     [Fact]
     public void LeavesPlainPlaylistsAlone()
         => Assert.Null(SourceLoader.FromGetPhpLink(new SourceConfig { Name = "x", M3uLocation = "https://example.com/list.m3u" }));
+
+    [Fact]
+    public async Task EpgCacheDownloadsOnlyWhenMissingOrStale()
+    {
+        var downloads = 0;
+        var loader = new SourceLoader(new HttpClient(new CountingHandler(() => downloads++)));
+        var source = new SourceConfig { Name = "x", EpgUrl = "http://epg.example/guide.xml" };
+        var playlist = new PlaylistResult([], []);
+        var file = Path.Combine(Path.GetTempPath(), $"uhf-epg-{Guid.NewGuid():N}.xml");
+        try
+        {
+            Assert.True(await loader.UpdateEpgCacheAsync(source, playlist, file, TimeSpan.FromHours(12)));
+            Assert.False(await loader.UpdateEpgCacheAsync(source, playlist, file, TimeSpan.FromHours(12)));
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-1));
+            Assert.True(await loader.UpdateEpgCacheAsync(source, playlist, file, TimeSpan.FromHours(12)));
+            Assert.Equal(2, downloads);
+
+            var guide = await SourceLoader.LoadEpgFileAsync(file);
+            Assert.Single(guide.For(new Channel { Id = "1", Name = "ZDF", StreamUrl = "x", EpgId = "zdf.de" }));
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Fact]
+    public async Task EpgCacheSkipsSourcesWithoutEpg()
+        => Assert.False(await new SourceLoader(new HttpClient()).UpdateEpgCacheAsync(
+            new SourceConfig { Name = "x" }, new PlaylistResult([], []), Path.Combine(Path.GetTempPath(), $"uhf-{Guid.NewGuid():N}"), TimeSpan.FromHours(1)));
+
+    private sealed class CountingHandler(Action onRequest) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            onRequest();
+            const string xml = """<tv><programme start="20261021190000 +0000" stop="20261021200000 +0000" channel="zdf.de"><title>heute</title></programme></tv>""";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(xml, Encoding.UTF8, "application/xml") });
+        }
+    }
 }

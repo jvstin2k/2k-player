@@ -1,4 +1,5 @@
 using UhfPlayer.Core.M3u;
+using UhfPlayer.Core.Models;
 
 namespace UhfPlayer.Core.Tests;
 
@@ -17,12 +18,14 @@ public class M3uParserTests
             #EXTGRP:Deutschland
             http://stream.example/2.ts
             http://stream.example/bare.ts
+            #EXTINF:-1 group-title="Filme",Heat
+            http://host/movie/u/p/55.mkv
             """;
 
         var result = await M3uParser.ParseAsync(playlist);
 
         Assert.Equal(["http://epg.example/a.xml.gz", "http://epg.example/b.xml"], result.EpgUrls);
-        Assert.Equal(3, result.Channels.Count);
+        Assert.Equal(4, result.Channels.Count);
 
         var first = result.Channels[0];
         Assert.Equal("Das Erste HD", first.Name);
@@ -34,5 +37,7 @@ public class M3uParserTests
         Assert.Equal("ZDF", result.Channels[1].Name);
         Assert.Equal("Deutschland", result.Channels[1].Group);
         Assert.Equal("http://stream.example/bare.ts", result.Channels[2].Name);
+        Assert.Equal(MediaKind.Live, result.Channels[2].Kind);
+        Assert.Equal(MediaKind.Movie, result.Channels[3].Kind);
     }
 }

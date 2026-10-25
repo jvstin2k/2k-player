@@ -1,7 +1,7 @@
 # Every merge to main builds a Windows installer and publishes it as a release in the public release repo.
 # Pull requests run the same build without publishing, so a broken Windows build shows up before the merge.
 # Installed players check that repo on start and update themselves (see src/UhfPlayer.App/Updater.cs).
-# Needs the secret RELEASES_TOKEN: a fine-grained token with "Contents: read and write" on uhf-player-releases.
+# Needs the secret RELEASES_TOKEN: a fine-grained token with "Contents: read and write" on 2k-player-releases.
 name: Release
 
 on:
@@ -14,7 +14,7 @@ on:
 concurrency: release
 
 env:
-  RELEASES_REPO: https://github.com/jvstin2k/uhf-player-releases
+  RELEASES_REPO: https://github.com/jvstin2k/2k-player-releases
 
 jobs:
   release:

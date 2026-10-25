@@ -12,7 +12,7 @@ namespace UhfPlayer.App;
 /// </summary>
 internal sealed class Updater
 {
-    private const string ReleasesRepo = "https://github.com/jvstin2k/uhf-player-releases";
+    private const string ReleasesRepo = "https://github.com/jvstin2k/2k-player-releases";
 
     private readonly UpdateManager _manager = new(new GithubSource(ReleasesRepo, null, false));
     private UpdateInfo? _available;

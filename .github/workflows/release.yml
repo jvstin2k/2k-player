@@ -69,6 +69,7 @@ jobs:
           git rev-parse -q --verify HEAD^2 *> $null
           $range = if ($LASTEXITCODE -eq 0) { 'HEAD^1..HEAD^2' } else { 'HEAD~1..HEAD' }
           $changes = git log --no-merges --format='- %s' $range
+          $tag, $asset, $assetUrl = (Get-Content src/UhfPlayer.App/libmpv/VERSION.txt).Split(' ')
           @(
             'Windows IPTV player for M3U playlists, Xtream Codes and XMLTV EPG.'
             ''
@@ -78,6 +79,10 @@ jobs:
             ''
             '### Changes'
             $changes
+            ''
+            '### Source and license'
+            'Free software under GPL-3.0-or-later. Source code and build instructions: https://github.com/jvstin2k/2k-player'
+            "Bundled libmpv: [$asset]($assetUrl) from shinchiro/mpv-winbuild-cmake $tag (GPL, source: https://github.com/mpv-player/mpv)"
           ) | Set-Content release-notes.md -Encoding utf8
           Get-Content release-notes.md
 

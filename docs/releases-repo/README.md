@@ -57,6 +57,12 @@ Windows Settings → Apps → Installed apps → **2k-Player** → Uninstall.
 | I | Stream info |
 | Mouse wheel over the video | Volume |
 
+## Source code and license
+
+2k-Player is free software under the [GNU GPL v3.0 or later](https://github.com/jvstin2k/2k-player/blob/main/LICENSE). The source code and instructions to build it yourself are at **[github.com/jvstin2k/2k-player](https://github.com/jvstin2k/2k-player)**. Bundled third-party components are listed in [THIRD-PARTY-NOTICES](https://github.com/jvstin2k/2k-player/blob/main/THIRD-PARTY-NOTICES.md).
+
+2k-Player does not include or provide any TV channels or content. You need your own playlist or login from an IPTV provider.
+
 ## Files in this release
 
 | File | What it is |

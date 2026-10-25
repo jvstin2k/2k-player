@@ -35,6 +35,8 @@
 
   <ItemGroup>
     <Content Include="Assets\AppIcon.ico;Assets\Logo.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- License texts travel with every install. -->
+    <Content Include="..\..\LICENSE;..\..\THIRD-PARTY-NOTICES.md" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- libmpv-2.dll is fetched by scripts/fetch-libmpv.ps1 and copied next to the exe. -->

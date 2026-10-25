@@ -1,5 +1,5 @@
 # Builds a release version and installs it for the current user: %LOCALAPPDATA%\Programs\UhfPlayer plus a
-# Start menu entry "UHF Player". Run it again after a git pull to update. -Uninstall removes both again;
+# Start menu entry "2k-Player". Run it again after a git pull to update. -Uninstall removes both again;
 # sources, favorites and caches in %LOCALAPPDATA%\UhfPlayer stay.
 param(
     [ValidateSet('x64', 'ARM64')][string]$Platform = 'x64',
@@ -8,14 +8,16 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $target = Join-Path $env:LOCALAPPDATA 'Programs\UhfPlayer'
-$shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'UHF Player.lnk'
+$shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) '2k-Player.lnk'
+# Entry from versions before the rename.
+Remove-Item (Join-Path ([Environment]::GetFolderPath('Programs')) 'UHF Player.lnk') -Force -ErrorAction SilentlyContinue
 
-if (Get-Process UhfPlayer.App -ErrorAction SilentlyContinue) { throw 'UHF Player laeuft noch. Bitte erst schliessen.' }
+if (Get-Process UhfPlayer.App -ErrorAction SilentlyContinue) { throw '2k-Player laeuft noch. Bitte erst schliessen.' }
 
 if ($Uninstall) {
     Remove-Item $target -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item $shortcut -Force -ErrorAction SilentlyContinue
-    Write-Host 'UHF Player wurde entfernt.'
+    Write-Host '2k-Player wurde entfernt.'
     return
 }
 
@@ -37,4 +39,4 @@ $link.WorkingDirectory = $target
 $link.Description = 'IPTV-Player fuer M3U, Xtream Codes und EPG'
 $link.Save()
 
-Write-Host "Installiert nach $target. Im Startmenue unter 'UHF Player'."
+Write-Host "Installiert nach $target. Im Startmenue unter '2k-Player'."

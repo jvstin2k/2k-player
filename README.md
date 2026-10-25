@@ -1,4 +1,6 @@
-# UHF Player für Windows
+<img src="docs/logo.png" width="96" alt="2k-Player Logo">
+
+# 2k-Player für Windows
 
 IPTV-Player für Windows im Stil von UHF (iOS/macOS). Quellen: M3U-Playlists, Xtream Codes, EPG (XMLTV, auch `.gz`).
 
@@ -25,6 +27,20 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 ```
 
 Zugangsdaten (Passwörter, Playlist- und EPG-URLs) liegen in der Windows-Anmeldeinformationsverwaltung unter „UhfPlayer“. In `%LOCALAPPDATA%\UhfPlayer` liegen `sources.json` (Quellen ohne Zugangsdaten), `state.json` (Favoriten, ausgeblendete Gruppen, Weiterschauen, Gesehen, Lautstärke), `crash.log` (Abstürze), `cache\` (Senderlisten und EPG für den Schnellstart) und `mpv.log`.
+
+## Für andere: Installer mit Auto-Update
+
+Jeder Merge nach `main` baut per GitHub Actions einen Installer und veröffentlicht ihn als Release im öffentlichen Repo [uhf-player-releases](https://github.com/jvstin2k/uhf-player-releases). Der Code bleibt privat.
+
+- **Installieren:** `2k-Player-win-Setup.exe` aus dem neuesten Release laden und starten. Windows zeigt beim ersten Mal „Der Computer wurde durch Windows geschützt“, weil der Installer nicht signiert ist: „Weitere Informationen“ → „Trotzdem ausführen“.
+- **Updates:** Beim Start lädt die App neue Versionen im Hintergrund und installiert sie beim nächsten Start, oder sofort über „Jetzt neu starten“.
+- **Deinstallieren:** Windows-Einstellungen → Apps → 2k-Player.
+
+Einmalige Einrichtung im GitHub-Konto:
+
+1. Öffentliches Repo `uhf-player-releases` anlegen, mit README (Releases brauchen einen ersten Commit).
+2. Fine-grained Token anlegen: nur Repo `uhf-player-releases`, Berechtigung „Contents: Read and write“.
+3. In `uhf-player` unter Settings → Secrets and variables → Actions als `RELEASES_TOKEN` speichern.
 
 ## Bedienung
 

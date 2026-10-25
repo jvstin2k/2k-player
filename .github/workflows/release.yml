@@ -43,7 +43,13 @@ jobs:
         run: ./scripts/fetch-libmpv.ps1
 
       - name: Publish
-        run: dotnet publish src/TwoKPlayer.App -c Release -r win-x64 -p:Platform=x64 --self-contained -o publish
+        shell: pwsh
+        run: |
+          dotnet publish src/TwoKPlayer.App -c Release -r win-x64 -p:Platform=x64 --self-contained -o publish
+          if ($LASTEXITCODE) { throw "dotnet publish failed" }
+          Get-ChildItem publish -Recurse -File -Exclude *.dll | ForEach-Object { $_.FullName.Substring((Resolve-Path publish).Path.Length + 1) }
+          # Without the .pri the app has no XAML resources and Windows kills it at start, before it can log anything.
+          if (-not (Get-ChildItem publish -Filter *.pri)) { throw "No .pri file in the publish output" }
 
       - name: Install vpk
         shell: pwsh
@@ -90,7 +96,7 @@ jobs:
         shell: pwsh
         run: |
           # packId differs from the data folder %LOCALAPPDATA%\2kPlayer, which an uninstall must not delete.
-          vpk pack --packId 2k-Player --packVersion "1.0.${{ github.run_number }}" --packDir publish --mainExe TwoKPlayer.App.exe --packTitle "2k-Player" --icon src/TwoKPlayer.App/Assets/AppIcon.ico --releaseNotes release-notes.md
+          vpk pack --packId 2k-Player --runtime win-x64 --packVersion "1.0.${{ github.run_number }}" --packDir publish --mainExe TwoKPlayer.App.exe --packTitle "2k-Player" --icon src/TwoKPlayer.App/Assets/AppIcon.ico --releaseNotes release-notes.md
           if ($LASTEXITCODE) { throw "vpk pack failed" }
 
       - name: Upload release

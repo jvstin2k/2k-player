@@ -12,13 +12,19 @@ public sealed class ChannelRow : INotifyPropertyChanged
 {
     private ImageSource? _logo;
     private bool _isFavorite;
+    private readonly bool _watched;
+    private readonly string? _match;
 
-    public ChannelRow(Channel channel, EpgGuide guide, DateTimeOffset now, bool isFavorite)
+    /// <param name="match">A programme found by the search, shown instead of what is on now.</param>
+    public ChannelRow(Channel channel, EpgGuide guide, DateTimeOffset now, bool isFavorite, bool watched = false, EpgProgramme? match = null)
     {
         Channel = channel;
         Now = guide.NowNext(channel, now).Now;
         Progress = Now?.Progress(now) ?? 0;
         _isFavorite = isFavorite;
+        _watched = watched;
+        if (match is not null)
+            _match = match.IsAiring(now) ? $"Jetzt: {match.Title}" : $"{match.Start.ToLocalTime():ddd HH:mm}  {match.Title}";
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -32,7 +38,7 @@ public sealed class ChannelRow : INotifyPropertyChanged
     public double Progress { get; }
     public Visibility ProgressVisibility => Now is null ? Visibility.Collapsed : Visibility.Visible;
 
-    public string Subtitle => Now?.Title ?? Channel.Kind switch
+    public string Subtitle => _match ?? Now?.Title ?? (_watched ? "✓ Gesehen · " : "") + Channel.Kind switch
     {
         MediaKind.Movie => "Film",
         MediaKind.Series => "Serie",

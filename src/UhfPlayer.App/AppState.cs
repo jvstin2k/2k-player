@@ -26,7 +26,7 @@ internal static class CrashLog
     }
 }
 
-/// <summary>Per-user choices that outlive a session: favorites, hidden groups, resume positions and volume.</summary>
+/// <summary>Per-user choices that outlive a session: favorites, hidden groups, resume positions, watched titles and volume.</summary>
 internal sealed class AppState
 {
     private static readonly string FilePath = Path.Combine(AppPaths.Root, "state.json");
@@ -38,6 +38,9 @@ internal sealed class AppState
 
     /// <summary>Seconds into a movie or episode, keyed by channel id.</summary>
     public Dictionary<string, double> Resume { get; set; } = [];
+
+    /// <summary>Movies and episodes watched to the end, by channel id.</summary>
+    public HashSet<string> Watched { get; set; } = [];
 
     /// <summary>0 to 100, as mpv's volume property.</summary>
     public double Volume { get; set; } = 100;

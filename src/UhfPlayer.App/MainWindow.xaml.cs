@@ -24,6 +24,25 @@ public sealed partial class MainWindow : Window
         Guide,
     }
 
+    private enum ViewMode
+    {
+        Normal,
+        FullScreen,
+        Mini,
+    }
+
+    // Label, video-aspect-override, panscan, keepaspect.
+    private static readonly (string Label, string Aspect, string Panscan, string KeepAspect)[] PictureFormats =
+    [
+        ("Original", "no", "0", "yes"),
+        ("Bild füllen (Zoom)", "no", "1", "yes"),
+        ("16:9", "16:9", "0", "yes"),
+        ("4:3", "4:3", "0", "yes"),
+        ("Strecken", "no", "0", "no"),
+    ];
+
+    private const int MaxReconnects = 5;
+
     private const string AllGroups = "Alle";
     private const string FavoritesGroup = "★ Favoriten";
     private const string NoGroup = "Ohne Gruppe";
@@ -45,12 +64,23 @@ public sealed partial class MainWindow : Window
     private readonly string? _playerError;
     private Channel? _playing;
     private bool _paused, _muted;
+    private int _pictureFormat;
+
+    /// <summary>The list a movie or episode was started from, for playing the next episode.</summary>
+    private List<Channel> _playQueue = [];
+
+    private int _reconnects;
+    private DateTime _lastStart;
 
     // Mouse moves over the video reach mpv's window, not XAML, so fullscreen idleness is detected by polling the cursor.
     private readonly DispatcherTimer _idleTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private CursorPoint _lastCursor;
     private DateTime _lastCursorMove;
     private FullscreenBar? _bar;
+    private ViewMode _mode;
+
+    /// <summary>Window size and position before the mini player, restored when it closes.</summary>
+    private Windows.Graphics.RectInt32? _restoreBounds;
 
     private Section _section;
 
@@ -85,7 +115,8 @@ public sealed partial class MainWindow : Window
             // Both events come from background threads, which must not touch the window itself, not even its
             // DispatcherQueue property; capture the queue here on the UI thread.
             var ui = DispatcherQueue;
-            _player.PlaybackFailed += error => ui.TryEnqueue(() => ShowStatus(InfoBarSeverity.Error, $"Wiedergabe fehlgeschlagen: {error}"));
+            _player.PlaybackEnded += error => ui.TryEnqueue(() => OnPlaybackEnded(error));
+            _player.PlaybackStarted += () => ui.TryEnqueue(OnPlaybackStarted);
             _player.MessageReceived += (name, arg) => ui.TryEnqueue(() => OnPlayerMessage(name, arg));
         }
 
@@ -264,15 +295,23 @@ public sealed partial class MainWindow : Window
         BackButton.Visibility = _episodes is null ? Visibility.Collapsed : Visibility.Visible;
         SectionTitle.Text = SectionTitles[(int)_section];
 
-        var items = (_episodes ?? _channels.Where(c => InSection(c) && InGroup(c, group)))
-            .Where(c => query.Length == 0 || c.Name.Contains(query, StringComparison.CurrentCultureIgnoreCase))
-            .ToList();
+        // The search matches channel names and, for live channels, programmes that are on now or later.
+        var items = new List<(Channel Channel, EpgProgramme? Match)>();
+        foreach (var c in _episodes ?? _channels.Where(c => InSection(c) && InGroup(c, group)))
+        {
+            if (query.Length == 0 || c.Name.Contains(query, StringComparison.CurrentCultureIgnoreCase))
+                items.Add((c, null));
+            else if (GuideFor(c).FindUpcoming(c, query, now) is { } programme)
+                items.Add((c, programme));
+        }
         CountText.Text = items.Count.ToString();
 
         if (_section == Section.Guide)
-            ShowGuide(items, now);
+            ShowGuide(items.Select(i => i.Channel).ToList(), now);
         else
-            ChannelList.ItemsSource = items.Select(c => new ChannelRow(c, GuideFor(c), now, _state.Favorites.Contains(c.Id))).ToList();
+            ChannelList.ItemsSource = items
+                .Select(i => new ChannelRow(i.Channel, GuideFor(i.Channel), now, _state.Favorites.Contains(i.Channel.Id), _state.Watched.Contains(i.Channel.Id), i.Match))
+                .ToList();
     }
 
     private void ShowGuide(List<Channel> channels, DateTimeOffset now)
@@ -375,9 +414,13 @@ public sealed partial class MainWindow : Window
         if (ChannelList.SelectedItem is not ChannelRow row)
             return;
         if (row.Channel.Kind == MediaKind.Series)
+        {
             _ = ShowEpisodesAsync(row.Channel);
-        else
-            Play(row.Channel);
+            return;
+        }
+        if (ChannelList.ItemsSource is List<ChannelRow> rows)
+            _playQueue = rows.ConvertAll(r => r.Channel);
+        Play(row.Channel);
     }
 
     private void Play(Channel channel)
@@ -406,6 +449,7 @@ public sealed partial class MainWindow : Window
             var resume = live ? 0 : _state.Resume.GetValueOrDefault(channel.Id);
             _player.Play(channel.StreamUrl, channel.UserAgent, channel.Referrer, resume);
             _playing = channel;
+            _reconnects = 0;
             SetPaused(false);
             if (resume > 0)
                 ShowStatus(InfoBarSeverity.Informational, $"Weiter ab {TimeSpan.FromSeconds(resume):h\\:mm\\:ss}");
@@ -435,7 +479,61 @@ public sealed partial class MainWindow : Window
             _state.Resume[_playing.Id] = position.Value;
         else
             _state.Resume.Remove(_playing.Id);
+        if (position >= duration * 0.95)
+            _state.Watched.Add(_playing.Id);
         _state.Save();
+    }
+
+    private void OnPlaybackStarted()
+    {
+        _lastStart = DateTime.UtcNow;
+        if (_reconnects > 0)
+            StatusBar.IsOpen = false; // the "verbinde neu" message
+    }
+
+    private async void OnPlaybackEnded(string? error)
+    {
+        if (_playing is not { } channel)
+            return;
+
+        if (channel.Kind == MediaKind.Live)
+        {
+            // A live stream never ends on purpose. A stream that played for a while starts with a fresh set of tries.
+            if (DateTime.UtcNow - _lastStart > TimeSpan.FromMinutes(1))
+            {
+                _reconnects = 0;
+                _lastStart = DateTime.UtcNow; // failed tries come within seconds and count up from here
+            }
+            if (_reconnects >= MaxReconnects)
+            {
+                ShowStatus(InfoBarSeverity.Error, $"{channel.Name}: Verbindung verloren{(error is null ? "" : $" ({error})")}. Drück LIVE für einen neuen Versuch.");
+                return;
+            }
+            _reconnects++;
+            ShowStatus(InfoBarSeverity.Warning, $"Verbindung unterbrochen, verbinde neu ({_reconnects}/{MaxReconnects}) …");
+            await Task.Delay(TimeSpan.FromSeconds(2 * _reconnects));
+            if (_playing == channel)
+                _player?.Play(channel.StreamUrl, channel.UserAgent, channel.Referrer);
+            return;
+        }
+
+        if (error is not null)
+        {
+            ShowStatus(InfoBarSeverity.Error, $"Wiedergabe fehlgeschlagen: {error}");
+            return;
+        }
+
+        _state.Resume.Remove(channel.Id);
+        _state.Watched.Add(channel.Id);
+        _state.Save();
+        var index = _playQueue.IndexOf(channel);
+        if (channel.Kind == MediaKind.Episode && index >= 0 && index + 1 < _playQueue.Count && _playQueue[index + 1].Kind == MediaKind.Episode)
+        {
+            var next = _playQueue[index + 1];
+            ShowStatus(InfoBarSeverity.Informational, $"Nächste Folge: {next.Name}");
+            Play(next);
+        }
+        RefreshChannels(); // shows the watched mark
     }
 
     private bool IsVod => _playing is { Kind: not MediaKind.Live };
@@ -502,10 +600,11 @@ public sealed partial class MainWindow : Window
     {
         if (_playing is { } c)
             _player?.Play(c.StreamUrl, c.UserAgent, c.Referrer);
+        _reconnects = 0;
         SetPaused(false);
     }
 
-    // Shared by the bar's flyout and the fullscreen bar's copy of it.
+    // Tracks, picture format and stream info. Shared by the bar's flyout and the fullscreen bar's copy of it.
     private void OnTracksOpening(object? sender, object e)
     {
         var flyout = (MenuFlyout)sender!;
@@ -514,6 +613,31 @@ public sealed partial class MainWindow : Window
         AddTracks(flyout, "Tonspur", "audio", "aid", tracks, allowOff: false);
         flyout.Items.Add(new MenuFlyoutSeparator());
         AddTracks(flyout, "Untertitel", "sub", "sid", tracks, allowOff: true);
+
+        flyout.Items.Add(new MenuFlyoutSeparator());
+        flyout.Items.Add(new MenuFlyoutItem { Text = "Bildformat", IsEnabled = false });
+        for (var i = 0; i < PictureFormats.Length; i++)
+        {
+            var format = i;
+            var item = new ToggleMenuFlyoutItem { Text = PictureFormats[i].Label, IsChecked = i == _pictureFormat };
+            item.Click += (_, _) => SetPictureFormat(format);
+            flyout.Items.Add(item);
+        }
+
+        flyout.Items.Add(new MenuFlyoutSeparator());
+        var stats = new MenuFlyoutItem { Text = "Stream-Info ein/aus (I)" };
+        stats.Click += (_, _) => _player?.ToggleStats();
+        flyout.Items.Add(stats);
+    }
+
+    // mpv keeps these properties across files, so the format stays when switching channels.
+    private void SetPictureFormat(int index)
+    {
+        _pictureFormat = index;
+        var (_, aspect, panscan, keepAspect) = PictureFormats[index];
+        _player?.SetProperty("video-aspect-override", aspect);
+        _player?.SetProperty("panscan", panscan);
+        _player?.SetProperty("keepaspect", keepAspect);
     }
 
     private void AddTracks(MenuFlyout flyout, string header, string type, string property, IReadOnlyList<MpvTrack> tracks, bool allowOff)
@@ -580,8 +704,14 @@ public sealed partial class MainWindow : Window
             case VirtualKey.F:
                 ToggleFullScreen();
                 break;
-            case VirtualKey.Escape when IsFullScreen:
-                ToggleFullScreen();
+            case VirtualKey.Escape when _mode != ViewMode.Normal:
+                SetMode(ViewMode.Normal);
+                break;
+            case VirtualKey.P:
+                ToggleMini();
+                break;
+            case VirtualKey.I:
+                _player?.ToggleStats();
                 break;
             case VirtualKey.M:
                 ToggleMute();
@@ -609,11 +739,16 @@ public sealed partial class MainWindow : Window
     {
         switch (name)
         {
+            // Double-click: a mini player goes back to the normal window rather than to fullscreen.
+            case "fullscreen" when _mode == ViewMode.Mini:
+            case "exit-fullscreen":
+                SetMode(ViewMode.Normal);
+                break;
             case "fullscreen":
                 ToggleFullScreen();
                 break;
-            case "exit-fullscreen" when IsFullScreen:
-                ToggleFullScreen();
+            case "mini":
+                ToggleMini();
                 break;
             case "channel" when int.TryParse(arg, out var delta):
                 StepChannel(delta);
@@ -627,7 +762,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void OnVideoDoubleTapped(object sender, DoubleTappedRoutedEventArgs e) => ToggleFullScreen();
+    private void OnVideoDoubleTapped(object sender, DoubleTappedRoutedEventArgs e) => OnPlayerMessage("fullscreen", null);
 
     // ---------------------------------------------------------------- video window and fullscreen
 
@@ -643,25 +778,48 @@ public sealed partial class MainWindow : Window
             (int)(VideoHost.ActualWidth * scale), (int)(VideoHost.ActualHeight * scale));
     }
 
-    private bool IsFullScreen => AppWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen;
+    private bool IsFullScreen => _mode == ViewMode.FullScreen;
 
     private void OnFullScreen(object sender, RoutedEventArgs e) => ToggleFullScreen();
 
-    private void ToggleFullScreen()
+    private void OnMini(object sender, RoutedEventArgs e) => ToggleMini();
+
+    private void ToggleFullScreen() => SetMode(IsFullScreen ? ViewMode.Normal : ViewMode.FullScreen);
+
+    private void ToggleMini() => SetMode(_mode == ViewMode.Mini ? ViewMode.Normal : ViewMode.Mini);
+
+    /// <summary>Normal window, fullscreen, or the mini player: a small always-on-top window with only the video.</summary>
+    private void SetMode(ViewMode mode)
     {
-        if (_section == Section.Guide)
+        if (mode == _mode || (_section == Section.Guide && mode != ViewMode.Normal))
             return;
-        var full = !IsFullScreen;
-        AppWindow.SetPresenter(full ? AppWindowPresenterKind.FullScreen : AppWindowPresenterKind.Default);
-        FullScreenIcon.Glyph = full ? "" : "";
-        if (full)
+        if (_mode == ViewMode.Normal && mode == ViewMode.Mini)
+            _restoreBounds = new Windows.Graphics.RectInt32(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
+        _mode = mode;
+
+        _idleTimer.Stop();
+        _bar?.Window.AppWindow.Hide();
+        AppWindow.SetPresenter(mode switch
         {
-            TitleBarRow.Height = new GridLength(0);
-            SidebarColumn.Width = ChannelsColumn.Width = new GridLength(0);
-            PlayerGrid.Margin = new Thickness(0);
+            ViewMode.FullScreen => AppWindowPresenterKind.FullScreen,
+            ViewMode.Mini => AppWindowPresenterKind.CompactOverlay,
+            _ => AppWindowPresenterKind.Default,
+        });
+        FullScreenIcon.Glyph = IsFullScreen ? "\uE73F" : "\uE740";
+
+        var normal = mode == ViewMode.Normal;
+        // The mini player keeps the title bar, so it can be dragged and closed.
+        TitleBarRow.Height = new GridLength(IsFullScreen ? 0 : 44);
+        SidebarColumn.Width = new GridLength(normal ? 248 : 0);
+        ChannelsColumn.Width = new GridLength(normal ? 400 : 0);
+        PlayerGrid.Margin = normal ? new Thickness(0, 0, 12, 12) : new Thickness(0);
+        // Outside the normal window the controls are in FullscreenBar's own window (fullscreen) or keys only (mini).
+        InfoPanel.Visibility = normal ? Visibility.Visible : Visibility.Collapsed;
+        if (!normal)
             StatusBar.IsOpen = false;
-            // In fullscreen the controls are in FullscreenBar's own window; the video keeps the whole screen.
-            InfoPanel.Visibility = Visibility.Collapsed;
+
+        if (mode == ViewMode.FullScreen)
+        {
             _bar ??= CreateBar();
             SyncBar();
             PositionBar();
@@ -670,15 +828,15 @@ public sealed partial class MainWindow : Window
             _lastCursorMove = DateTime.UtcNow;
             _idleTimer.Start();
         }
-        else
+        else if (mode == ViewMode.Mini)
         {
-            _idleTimer.Stop();
-            _bar?.Window.AppWindow.Hide();
-            InfoPanel.Visibility = Visibility.Visible;
-            PlayerGrid.Margin = new Thickness(0, 0, 12, 12);
-            TitleBarRow.Height = new GridLength(44);
-            SidebarColumn.Width = new GridLength(248);
-            ChannelsColumn.Width = new GridLength(400);
+            var scale = Content.XamlRoot?.RasterizationScale ?? 1;
+            AppWindow.Resize(new Windows.Graphics.SizeInt32((int)(480 * scale), (int)((270 + 44) * scale)));
+        }
+        else if (_restoreBounds is { } bounds)
+        {
+            AppWindow.MoveAndResize(bounds);
+            _restoreBounds = null;
         }
     }
 
@@ -856,6 +1014,6 @@ public sealed partial class MainWindow : Window
     {
         StatusBar.Severity = severity;
         StatusBar.Message = message;
-        StatusBar.IsOpen = !IsFullScreen;
+        StatusBar.IsOpen = _mode == ViewMode.Normal;
     }
 }

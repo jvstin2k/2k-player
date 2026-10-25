@@ -18,7 +18,13 @@ dotnet test tests/UhfPlayer.Core.Tests
 dotnet run --project src/UhfPlayer.App -p:Platform=x64
 ```
 
-In `%LOCALAPPDATA%\UhfPlayer` liegen `sources.json` (Quellen), `state.json` (Favoriten, ausgeblendete Gruppen, Weiterschauen, Lautstärke), `crash.log` (Abstürze), `cache\` (Senderlisten und EPG für den Schnellstart) und `mpv.log`.
+Als fertige App mit Startmenü-Eintrag installieren (nach jedem `git pull` erneut ausführen, `-Uninstall` entfernt sie):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+```
+
+Zugangsdaten (Passwörter, Playlist- und EPG-URLs) liegen in der Windows-Anmeldeinformationsverwaltung unter „UhfPlayer“. In `%LOCALAPPDATA%\UhfPlayer` liegen `sources.json` (Quellen ohne Zugangsdaten), `state.json` (Favoriten, ausgeblendete Gruppen, Weiterschauen, Gesehen, Lautstärke), `crash.log` (Abstürze), `cache\` (Senderlisten und EPG für den Schnellstart) und `mpv.log`.
 
 ## Bedienung
 
@@ -28,10 +34,14 @@ In `%LOCALAPPDATA%\UhfPlayer` liegen `sources.json` (Quellen), `state.json` (Fav
 | ↑ / ↓ | Vorheriger / nächster Sender |
 | ← / → | 10 s zurück / vor (Filme und Folgen) |
 | F, Doppelklick aufs Bild | Vollbild an/aus |
-| Esc | Vollbild verlassen |
+| Esc | Vollbild oder Mini-Player verlassen |
 | M | Ton aus |
+| P | Mini-Player (klein, immer im Vordergrund), Doppelklick zurück |
+| I | Stream-Info (Auflösung, Codec, Bitrate) |
 | Mausrad über dem Bild, Regler neben dem Lautsprecher | Lautstärke (wird gespeichert) |
 | Stern in der Liste | Favorit |
+| Suche | findet Sender und Sendungen im EPG |
+| Spuren-Button | Tonspur, Untertitel, Bildformat, Stream-Info |
 | Rechtsklick auf Kategorie | Kategorie ausblenden (wieder einblenden über das Zahnrad) |
 
 ## Aufbau
@@ -46,4 +56,3 @@ In `%LOCALAPPDATA%\UhfPlayer` liegen `sources.json` (Quellen), `state.json` (Fav
 ## Bewusst noch nicht drin
 
 - Catch-up, zuletzt gesehener Sender beim Start.
-- Passwörter liegen im Klartext in `sources.json` (später Windows Credential Locker).

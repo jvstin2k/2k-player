@@ -28,7 +28,7 @@
 
   <!-- libmpv-2.dll is fetched by scripts/fetch-libmpv.ps1 and copied next to the exe. -->
   <ItemGroup>
-    <None Include="libmpv\libmpv-2.dll" Condition="Exists('libmpv\libmpv-2.dll')" Link="libmpv-2.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="libmpv\libmpv-2.dll" Condition="Exists('libmpv\libmpv-2.dll')" Link="libmpv-2.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

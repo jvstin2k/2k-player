@@ -46,6 +46,18 @@ public class XmlTvParserTests
         Assert.Equal("Wetter", next?.Title);
     }
 
+    [Fact]
+    public async Task FindUpcomingSkipsWhatHasEnded()
+    {
+        var guide = await XmlTvParser.ParseAsync(ToStream(Xml, gzip: false));
+        var channel = new Channel { Id = "1", Name = "ZDF", StreamUrl = "x", EpgId = "zdf.de" };
+        var at = new DateTimeOffset(2026, 10, 21, 17, 5, 0, TimeSpan.Zero); // during "heute"
+
+        Assert.Equal("heute", guide.FindUpcoming(channel, "HEUTE", at)?.Title);
+        Assert.Null(guide.FindUpcoming(channel, "vorher", at));
+        Assert.Equal("Wetter", guide.FindUpcoming(channel, "wett", at)?.Title);
+    }
+
     [Theory]
     [InlineData("20261021190000 +0200", "2026-10-21T17:00:00Z")]
     [InlineData("20261021190000 -0130", "2026-10-21T20:30:00Z")]

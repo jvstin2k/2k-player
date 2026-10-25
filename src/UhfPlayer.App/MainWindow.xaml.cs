@@ -61,6 +61,7 @@ public sealed partial class MainWindow : Window
     private readonly List<Channel> _channels = [];
     private readonly Dictionary<Guid, EpgGuide> _guides = [];
     private readonly MpvPlayer? _player;
+    private readonly Updater _updater = new();
     private readonly string? _playerError;
     private Channel? _playing;
     private bool _paused, _muted;
@@ -129,12 +130,31 @@ public sealed partial class MainWindow : Window
         {
             SaveResume();
             _state.Save();
+            _updater.ApplyOnExit();
             _idleTimer.Stop();
             _player?.Dispose();
         };
 
         SectionList.SelectedIndex = 0;
-        _ = ReloadAsync();
+        _ = StartAsync();
+    }
+
+    private async Task StartAsync()
+    {
+        await ReloadAsync();
+        // After loading, so the update note is not replaced by the loading status.
+        if (await _updater.DownloadAsync() is { } version)
+        {
+            ShowStatus(InfoBarSeverity.Success, $"Update {version} ist geladen und wird beim nächsten Start installiert.");
+            var restart = new Button { Content = "Jetzt neu starten" };
+            restart.Click += (_, _) =>
+            {
+                SaveResume();
+                _state.Save();
+                _updater.RestartNow();
+            };
+            StatusBar.ActionButton = restart;
+        }
     }
 
     // ---------------------------------------------------------------- loading
@@ -1014,6 +1034,7 @@ public sealed partial class MainWindow : Window
     {
         StatusBar.Severity = severity;
         StatusBar.Message = message;
+        StatusBar.ActionButton = null;
         StatusBar.IsOpen = _mode == ViewMode.Normal;
     }
 }

@@ -1,0 +1,82 @@
+# Every merge to main builds a Windows installer and publishes it as a release in the public release repo.
+# Pull requests run the same build without publishing, so a broken Windows build shows up before the merge.
+# Installed players check that repo on start and update themselves (see src/UhfPlayer.App/Updater.cs).
+# Needs the secret RELEASES_TOKEN: a fine-grained token with "Contents: read and write" on uhf-player-releases.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  pull_request:
+  workflow_dispatch:
+
+concurrency: release
+
+env:
+  RELEASES_REPO: https://github.com/jvstin2k/uhf-player-releases
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Test
+        run: dotnet test tests/UhfPlayer.Core.Tests
+
+      - name: Fetch libmpv
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/fetch-libmpv.ps1
+
+      - name: Publish
+        run: dotnet publish src/UhfPlayer.App -c Release -r win-x64 -p:Platform=x64 --self-contained -o publish
+
+      - name: Install vpk
+        shell: pwsh
+        run: |
+          dotnet tool install -g vpk --version 1.2.161
+          "$env:USERPROFILE\.dotnet\tools" >> $env:GITHUB_PATH
+
+      - name: Fetch earlier releases
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        env:
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          if (-not $env:RELEASES_TOKEN) { throw 'Secret RELEASES_TOKEN fehlt, siehe README.' }
+          # Lets vpk build small delta updates. The very first run finds none, which is fine.
+          vpk download github --repoUrl $env:RELEASES_REPO --token $env:RELEASES_TOKEN
+          exit 0
+
+      - name: Pack
+        shell: pwsh
+        run: |
+          # packId differs from the data folder %LOCALAPPDATA%\UhfPlayer, which an uninstall must not delete.
+          vpk pack --packId UhfPlayerApp --packVersion "1.0.${{ github.run_number }}" --packDir publish --mainExe UhfPlayer.App.exe --packTitle "UHF Player"
+          if ($LASTEXITCODE) { throw "vpk pack failed" }
+
+      - name: Upload release
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        env:
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          $version = "1.0.${{ github.run_number }}"
+          vpk upload github --repoUrl $env:RELEASES_REPO --token $env:RELEASES_TOKEN --publish --releaseName "UHF Player $version" --tag "v$version"
+          if ($LASTEXITCODE) { throw "vpk upload failed" }
+
+      - name: Keep the installer of a pull request for testing
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: UHF-Player-Setup
+          path: Releases/*Setup.exe

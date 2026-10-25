@@ -3,7 +3,9 @@ param([ValidateSet('x64', 'ARM64')][string]$Platform = 'x64')
 $ErrorActionPreference = 'Stop'
 
 $pattern = if ($Platform -eq 'ARM64') { '^mpv-dev-aarch64-\d.*\.7z$' } else { '^mpv-dev-x86_64-\d.*\.7z$' }
-$release = Invoke-RestMethod 'https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest'
+# In GitHub Actions the token avoids the low anonymous API rate limit shared by all runners.
+$headers = if ($env:GITHUB_TOKEN) { @{ Authorization = "Bearer $env:GITHUB_TOKEN" } } else { @{} }
+$release = Invoke-RestMethod 'https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest' -Headers $headers
 $asset = $release.assets | Where-Object name -Match $pattern | Select-Object -First 1
 if (-not $asset) { throw "No libmpv asset matching $pattern in release $($release.tag_name)." }
 

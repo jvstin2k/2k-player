@@ -270,6 +270,7 @@ public sealed partial class MainWindow : Window
             ((Grid)_overlay.Content).Children.Add(InfoPanel);
             PositionOverlay();
             _overlay.AppWindow.Show(false);
+            GetCursorPos(out _lastCursor);
             _lastCursorMove = DateTime.UtcNow;
             _idleTimer.Start();
         }
@@ -311,7 +312,8 @@ public sealed partial class MainWindow : Window
     private void OnIdleTick(object? sender, object e)
     {
         GetCursorPos(out var cursor);
-        if (cursor.X != _lastCursor.X || cursor.Y != _lastCursor.Y)
+        // Sensor jitter and touchpads report tiny moves without anyone touching the mouse; ignore those.
+        if (Math.Abs(cursor.X - _lastCursor.X) + Math.Abs(cursor.Y - _lastCursor.Y) > CursorMoveThreshold)
         {
             _lastCursor = cursor;
             _lastCursorMove = DateTime.UtcNow;
@@ -326,6 +328,8 @@ public sealed partial class MainWindow : Window
             _overlay?.AppWindow.Hide();
         }
     }
+
+    private const int CursorMoveThreshold = 12; // physical pixels
 
     private struct CursorPoint
     {

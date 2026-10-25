@@ -26,21 +26,21 @@ You need Windows 10 1809 or later (or Windows 11), the [.NET 10 SDK](https://dot
 git clone https://github.com/jvstin2k/2k-player.git
 cd 2k-player
 
-# Once: downloads libmpv-2.dll (the player engine) into src/UhfPlayer.App/libmpv
+# Once: downloads libmpv-2.dll (the player engine) into src/TwoKPlayer.App/libmpv
 ./scripts/fetch-libmpv.ps1               # on ARM64: -Platform ARM64
 
-dotnet test tests/UhfPlayer.Core.Tests   # optional: parser tests
-dotnet run --project src/UhfPlayer.App -p:Platform=x64
+dotnet test tests/TwoKPlayer.Core.Tests   # optional: parser tests
+dotnet run --project src/TwoKPlayer.App -p:Platform=x64
 ```
 
 If PowerShell refuses to run the script, start it with `powershell -ExecutionPolicy Bypass -File scripts\fetch-libmpv.ps1`.
 
 ### Standalone app
 
-To get a folder you can copy anywhere and start with `UhfPlayer.App.exe`:
+To get a folder you can copy anywhere and start with `TwoKPlayer.App.exe`:
 
 ```powershell
-dotnet publish src/UhfPlayer.App -c Release -r win-x64 -p:Platform=x64 --self-contained -o publish
+dotnet publish src/TwoKPlayer.App -c Release -r win-x64 -p:Platform=x64 --self-contained -o publish
 ```
 
 `scripts\install.ps1` does the same and adds a Start menu entry ("2k-Player"). Run it again after `git pull` to update; `-Uninstall` removes it.
@@ -57,17 +57,17 @@ The installer is made with [Velopack](https://velopack.io), after the publish st
 
 ```powershell
 dotnet tool install -g vpk --version 1.2.161
-vpk pack --packId 2k-Player --packVersion 1.0.0 --packDir publish --mainExe UhfPlayer.App.exe --packTitle "2k-Player" --icon src/UhfPlayer.App/Assets/AppIcon.ico
+vpk pack --packId 2k-Player --packVersion 1.0.0 --packDir publish --mainExe TwoKPlayer.App.exe --packTitle "2k-Player" --icon src/TwoKPlayer.App/Assets/AppIcon.ico
 ```
 
-This writes `2k-Player-win-Setup.exe` and the update files to `Releases\`. The app looks for updates in the repository named in `src/UhfPlayer.App/Updater.cs`; change it there if you publish your own releases.
+This writes `2k-Player-win-Setup.exe` and the update files to `Releases\`. The app looks for updates in the repository named in `src/TwoKPlayer.App/Updater.cs`; change it there if you publish your own releases.
 
 Every merge to `main` does all of this in GitHub Actions (`.github/workflows/release.yml`) and uploads the release to [2k-player-releases](https://github.com/jvstin2k/2k-player-releases). That needs a secret `RELEASES_TOKEN`: a fine-grained token with "Contents: Read and write" on the releases repository. The releases page text comes from `docs/releases-repo/`.
 
 ## Where data is stored
 
-- Passwords, playlist and EPG URLs: Windows Credential Manager, under "UhfPlayer"
-- `%LOCALAPPDATA%\UhfPlayer`: `sources.json` (sources without credentials), `state.json` (favourites, hidden groups, resume, watched, volume), `cache\` (channel lists and EPG for a fast start), `crash.log`, `mpv.log`
+- Passwords, playlist and EPG URLs: Windows Credential Manager, under "2kPlayer"
+- `%LOCALAPPDATA%\2kPlayer`: `sources.json` (sources without credentials), `state.json` (favourites, hidden groups, resume, watched, volume), `cache\` (channel lists and EPG for a fast start), `crash.log`, `mpv.log`
 
 ## Keyboard and mouse
 
@@ -91,13 +91,13 @@ Every merge to `main` does all of this in GitHub Actions (`.github/workflows/rel
 
 | Path | Content |
 |------|---------|
-| `src/UhfPlayer.Core/M3u` | M3U parser (tvg-*, group-title, `#EXTGRP`, `#EXTVLCOPT`, `url-tvg`) |
-| `src/UhfPlayer.Core/Xtream` | Xtream Codes live TV, movies and series via `player_api.php`, EPG via `xmltv.php` |
-| `src/UhfPlayer.Core/Epg` | Streaming XMLTV parser, now/next lookup, search |
-| `src/UhfPlayer.App` | WinUI 3 interface, `MpvPlayer` (libmpv in a child window), updater |
-| `tests/UhfPlayer.Core.Tests` | Tests for the parsers |
+| `src/TwoKPlayer.Core/M3u` | M3U parser (tvg-*, group-title, `#EXTGRP`, `#EXTVLCOPT`, `url-tvg`) |
+| `src/TwoKPlayer.Core/Xtream` | Xtream Codes live TV, movies and series via `player_api.php`, EPG via `xmltv.php` |
+| `src/TwoKPlayer.Core/Epg` | Streaming XMLTV parser, now/next lookup, search |
+| `src/TwoKPlayer.App` | WinUI 3 interface, `MpvPlayer` (libmpv in a child window), updater |
+| `tests/TwoKPlayer.Core.Tests` | Tests for the parsers |
 
-Built with WinUI 3 (Windows App SDK 1.8) and .NET 10. `UhfPlayer.Core` has no Windows dependency. The internal project names still say "UhfPlayer", the app's earlier name.
+Built with WinUI 3 (Windows App SDK 1.8) and .NET 10. `TwoKPlayer.Core` has no Windows dependency.
 
 ## License
 

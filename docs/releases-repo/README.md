@@ -4,7 +4,7 @@
 
 <h1 align="center">2k-Player</h1>
 
-<p align="center">A fast, modern IPTV player for Windows, inspired by UHF on iOS and macOS.</p>
+<p align="center">A fast, modern IPTV player for Windows.</p>
 
 <p align="center">
   <a href="../../releases/latest"><b>⬇ Download the latest version</b></a>

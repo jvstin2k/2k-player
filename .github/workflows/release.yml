@@ -11,7 +11,10 @@ on:
   pull_request:
   workflow_dispatch:
 
-concurrency: release
+# Releases queue one after another; pull request builds get their own group, so they never push a release
+# out of the queue (that cancelled the release after PR #7).
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || 'release' }}
 
 env:
   RELEASES_REPO: https://github.com/jvstin2k/2k-player-releases

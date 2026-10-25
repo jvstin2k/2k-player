@@ -1,4 +1,4 @@
-# Downloads the latest libmpv build (shinchiro/mpv-winbuild-cmake) into src/UhfPlayer.App/libmpv.
+# Downloads the latest libmpv build (shinchiro/mpv-winbuild-cmake) into src/TwoKPlayer.App/libmpv.
 param([ValidateSet('x64', 'ARM64')][string]$Platform = 'x64')
 $ErrorActionPreference = 'Stop'
 
@@ -9,7 +9,7 @@ $release = Invoke-RestMethod 'https://api.github.com/repos/shinchiro/mpv-winbuil
 $asset = $release.assets | Where-Object name -Match $pattern | Select-Object -First 1
 if (-not $asset) { throw "No libmpv asset matching $pattern in release $($release.tag_name)." }
 
-$target = Join-Path $PSScriptRoot '..\src\UhfPlayer.App\libmpv'
+$target = Join-Path $PSScriptRoot '..\src\TwoKPlayer.App\libmpv'
 $archive = Join-Path $env:TEMP $asset.name
 New-Item -ItemType Directory -Force $target | Out-Null
 Write-Host "Downloading $($asset.name) ..."

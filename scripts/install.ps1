@@ -1,18 +1,19 @@
-# Builds a release version and installs it for the current user: %LOCALAPPDATA%\Programs\UhfPlayer plus a
+# Builds a release version and installs it for the current user: %LOCALAPPDATA%\Programs\2k-Player plus a
 # Start menu entry "2k-Player". Run it again after a git pull to update. -Uninstall removes both again;
-# sources, favorites and caches in %LOCALAPPDATA%\UhfPlayer stay.
+# sources, favorites and caches in %LOCALAPPDATA%\2kPlayer stay.
 param(
     [ValidateSet('x64', 'ARM64')][string]$Platform = 'x64',
     [switch]$Uninstall
 )
 $ErrorActionPreference = 'Stop'
 
-$target = Join-Path $env:LOCALAPPDATA 'Programs\UhfPlayer'
+$target = Join-Path $env:LOCALAPPDATA 'Programs\2k-Player'
 $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) '2k-Player.lnk'
-# Entry from versions before the rename.
+# Shortcut and folder from versions before the rename.
 Remove-Item (Join-Path ([Environment]::GetFolderPath('Programs')) 'UHF Player.lnk') -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $env:LOCALAPPDATA 'Programs\UhfPlayer') -Recurse -Force -ErrorAction SilentlyContinue
 
-if (Get-Process UhfPlayer.App -ErrorAction SilentlyContinue) { throw '2k-Player laeuft noch. Bitte erst schliessen.' }
+if (Get-Process TwoKPlayer.App, UhfPlayer.App -ErrorAction SilentlyContinue) { throw '2k-Player laeuft noch. Bitte erst schliessen.' }
 
 if ($Uninstall) {
     Remove-Item $target -Recurse -Force -ErrorAction SilentlyContinue
@@ -22,19 +23,19 @@ if ($Uninstall) {
 }
 
 $root = Join-Path $PSScriptRoot '..'
-if (-not (Test-Path (Join-Path $root 'src\UhfPlayer.App\libmpv\libmpv-2.dll'))) {
+if (-not (Test-Path (Join-Path $root 'src\TwoKPlayer.App\libmpv\libmpv-2.dll'))) {
     & (Join-Path $PSScriptRoot 'fetch-libmpv.ps1') -Platform $Platform
 }
 
 $rid = if ($Platform -eq 'ARM64') { 'win-arm64' } else { 'win-x64' }
 # A fresh folder, so files from an older version do not linger.
 Remove-Item $target -Recurse -Force -ErrorAction SilentlyContinue
-dotnet publish (Join-Path $root 'src\UhfPlayer.App') -c Release -r $rid -p:Platform=$Platform --self-contained -o $target
+dotnet publish (Join-Path $root 'src\TwoKPlayer.App') -c Release -r $rid -p:Platform=$Platform --self-contained -o $target
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish fehlgeschlagen (Exit-Code $LASTEXITCODE)." }
 
 $shell = New-Object -ComObject WScript.Shell
 $link = $shell.CreateShortcut($shortcut)
-$link.TargetPath = Join-Path $target 'UhfPlayer.App.exe'
+$link.TargetPath = Join-Path $target 'TwoKPlayer.App.exe'
 $link.WorkingDirectory = $target
 $link.Description = 'IPTV-Player fuer M3U, Xtream Codes und EPG'
 $link.Save()

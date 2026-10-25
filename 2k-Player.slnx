@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TwoKPlayer.App/TwoKPlayer.App.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/TwoKPlayer.Core/TwoKPlayer.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TwoKPlayer.Core.Tests/TwoKPlayer.Core.Tests.csproj" />
+  </Folder>
+</Solution>

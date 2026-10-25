@@ -1,6 +1,6 @@
 # Every merge to main builds a Windows installer and publishes it as a release in the public release repo.
 # Pull requests run the same build without publishing, so a broken Windows build shows up before the merge.
-# Installed players check that repo on start and update themselves (see src/UhfPlayer.App/Updater.cs).
+# Installed players check that repo on start and update themselves (see src/TwoKPlayer.App/Updater.cs).
 # Needs the secret RELEASES_TOKEN: a fine-grained token with "Contents: read and write" on 2k-player-releases.
 name: Release
 
@@ -34,7 +34,7 @@ jobs:
             10.0.x
 
       - name: Test
-        run: dotnet test tests/UhfPlayer.Core.Tests
+        run: dotnet test tests/TwoKPlayer.Core.Tests
 
       - name: Fetch libmpv
         shell: pwsh
@@ -43,7 +43,7 @@ jobs:
         run: ./scripts/fetch-libmpv.ps1
 
       - name: Publish
-        run: dotnet publish src/UhfPlayer.App -c Release -r win-x64 -p:Platform=x64 --self-contained -o publish
+        run: dotnet publish src/TwoKPlayer.App -c Release -r win-x64 -p:Platform=x64 --self-contained -o publish
 
       - name: Install vpk
         shell: pwsh
@@ -69,7 +69,7 @@ jobs:
           git rev-parse -q --verify HEAD^2 *> $null
           $range = if ($LASTEXITCODE -eq 0) { 'HEAD^1..HEAD^2' } else { 'HEAD~1..HEAD' }
           $changes = git log --no-merges --format='- %s' $range
-          $tag, $asset, $assetUrl = (Get-Content src/UhfPlayer.App/libmpv/VERSION.txt).Split(' ')
+          $tag, $asset, $assetUrl = (Get-Content src/TwoKPlayer.App/libmpv/VERSION.txt).Split(' ')
           @(
             'Windows IPTV player for M3U playlists, Xtream Codes and XMLTV EPG.'
             ''
@@ -89,8 +89,8 @@ jobs:
       - name: Pack
         shell: pwsh
         run: |
-          # packId differs from the data folder %LOCALAPPDATA%\UhfPlayer, which an uninstall must not delete.
-          vpk pack --packId 2k-Player --packVersion "1.0.${{ github.run_number }}" --packDir publish --mainExe UhfPlayer.App.exe --packTitle "2k-Player" --icon src/UhfPlayer.App/Assets/AppIcon.ico --releaseNotes release-notes.md
+          # packId differs from the data folder %LOCALAPPDATA%\2kPlayer, which an uninstall must not delete.
+          vpk pack --packId 2k-Player --packVersion "1.0.${{ github.run_number }}" --packDir publish --mainExe TwoKPlayer.App.exe --packTitle "2k-Player" --icon src/TwoKPlayer.App/Assets/AppIcon.ico --releaseNotes release-notes.md
           if ($LASTEXITCODE) { throw "vpk pack failed" }
 
       - name: Upload release

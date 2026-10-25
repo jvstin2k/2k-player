@@ -44,7 +44,7 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <AutoSuggestBox x:Name="SearchBox" PlaceholderText="Suchen" QueryIcon="Find" TextChanged="OnSearchChanged" />
+                <AutoSuggestBox x:Name="SearchBox" PlaceholderText="Sender oder Sendung suchen" QueryIcon="Find" TextChanged="OnSearchChanged" />
 
                 <ListView x:Name="SectionList" Grid.Row="1" SelectionChanged="OnSectionChanged">
                     <ListViewItem>
@@ -225,11 +225,14 @@
                         </Button>
                         <Slider x:Name="VolumeSlider" Width="110" Minimum="0" Maximum="100" StepFrequency="1" VerticalAlignment="Center"
                                 ToolTipService.ToolTip="Lautstärke (auch Mausrad über dem Bild)" />
-                        <Button Width="40" Height="40" CornerRadius="20" Padding="0" ToolTipService.ToolTip="Tonspur und Untertitel">
+                        <Button Width="40" Height="40" CornerRadius="20" Padding="0" ToolTipService.ToolTip="Ton, Untertitel, Bildformat und Stream-Info">
                             <FontIcon Glyph="&#xE7F0;" FontSize="16" />
                             <Button.Flyout>
                                 <MenuFlyout x:Name="TracksFlyout" Opening="OnTracksOpening" />
                             </Button.Flyout>
+                        </Button>
+                        <Button Click="OnMini" Width="40" Height="40" CornerRadius="20" Padding="0" ToolTipService.ToolTip="Mini-Player, immer im Vordergrund (P)">
+                            <FontIcon Glyph="&#xE8A7;" FontSize="16" />
                         </Button>
                         <Button Click="OnFullScreen" Width="40" Height="40" CornerRadius="20" Padding="0" ToolTipService.ToolTip="Vollbild (F, Doppelklick)">
                             <FontIcon x:Name="FullScreenIcon" Glyph="&#xE740;" FontSize="16" />

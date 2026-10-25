@@ -25,6 +25,17 @@ public sealed class EpgGuide(
         return [];
     }
 
+    /// <summary>The first programme airing at or after <paramref name="from"/> whose title contains <paramref name="query"/>.</summary>
+    public EpgProgramme? FindUpcoming(Channel channel, string query, DateTimeOffset from)
+    {
+        foreach (var p in For(channel))
+        {
+            if (p.Stop > from && p.Title.Contains(query, StringComparison.CurrentCultureIgnoreCase))
+                return p;
+        }
+        return null;
+    }
+
     /// <summary>The programme airing at <paramref name="at"/> and the one after it.</summary>
     public (EpgProgramme? Now, EpgProgramme? Next) NowNext(Channel channel, DateTimeOffset at)
     {

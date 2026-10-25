@@ -22,8 +22,14 @@ internal sealed partial class MpvPlayer : IDisposable
     private static MpvPlayer? s_hookTarget;
     private static nint s_staticProc;
 
-    /// <summary>Raised on the mpv event thread when a stream cannot be opened or breaks off.</summary>
-    public event Action<string>? PlaybackFailed;
+    /// <summary>
+    /// Raised on the mpv event thread when a file stops by itself: with an error message when it could not be opened
+    /// or broke off, with null at its regular end. Not raised when another file replaces it.
+    /// </summary>
+    public event Action<string?>? PlaybackEnded;
+
+    /// <summary>Raised on the mpv event thread once a file is open and about to play.</summary>
+    public event Action? PlaybackStarted;
 
     /// <summary>
     /// Raised on the mpv event thread for "script-message uhf &lt;name&gt; [arg]" bindings in InputConf, and on the
@@ -42,6 +48,8 @@ internal sealed partial class MpvPlayer : IDisposable
         ESC script-message uhf exit-fullscreen
         UP script-message uhf channel -1
         DOWN script-message uhf channel 1
+        p script-message uhf mini
+        i script-binding stats/display-stats-toggle
         """;
 
     public MpvPlayer(nint parentHwnd)
@@ -71,6 +79,8 @@ internal sealed partial class MpvPlayer : IDisposable
         Option("demuxer-lavf-analyzeduration", "1");
         Option("cache-pause-initial", "no");
         Option("demuxer-max-bytes", "64MiB");
+        // Let FFmpeg reconnect short HTTP drops itself; MainWindow reopens the stream when that is not enough.
+        Option("stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=5");
         Option("log-file", Path.Combine(AppPaths.Root, "mpv.log"));
         var inputConf = Path.Combine(AppPaths.Root, "input.conf");
         File.WriteAllText(inputConf, InputConf);
@@ -174,7 +184,13 @@ internal sealed partial class MpvPlayer : IDisposable
             {
                 var end = (MpvEventEndFile*)ev->Data;
                 if (end->Reason == MPV_END_FILE_REASON_ERROR)
-                    PlaybackFailed?.Invoke(Marshal.PtrToStringUTF8(mpv_error_string(end->Error)) ?? "unknown error");
+                    PlaybackEnded?.Invoke(Marshal.PtrToStringUTF8(mpv_error_string(end->Error)) ?? "unknown error");
+                else if (end->Reason == MPV_END_FILE_REASON_EOF)
+                    PlaybackEnded?.Invoke(null);
+            }
+            else if (ev->EventId == MPV_EVENT_FILE_LOADED)
+            {
+                PlaybackStarted?.Invoke();
             }
             else if (ev->EventId == MPV_EVENT_CLIENT_MESSAGE && ev->Data != 0)
             {
@@ -202,6 +218,9 @@ internal sealed partial class MpvPlayer : IDisposable
     public void TogglePause() => Command("cycle", "pause");
 
     public void Seek(int seconds) => Command("seek", seconds.ToString(), "relative");
+
+    /// <summary>mpv's built-in stats overlay: resolution, codecs, bitrate, dropped frames.</summary>
+    public void ToggleStats() => Command("script-binding", "stats/display-stats-toggle");
 
     public void SetVisible(bool visible) => ShowWindow(_hwnd, visible ? SW_SHOW : SW_HIDE);
 
@@ -293,7 +312,8 @@ internal sealed partial class MpvPlayer : IDisposable
     [LibraryImport(Mpv)] private static partial void mpv_free(nint data);
     [LibraryImport(Mpv, StringMarshalling = StringMarshalling.Utf8)] private static partial nint mpv_get_property_string(nint ctx, string name);
 
-    private const int MPV_EVENT_SHUTDOWN = 1, MPV_EVENT_END_FILE = 7, MPV_EVENT_CLIENT_MESSAGE = 16, MPV_END_FILE_REASON_ERROR = 4;
+    private const int MPV_EVENT_SHUTDOWN = 1, MPV_EVENT_END_FILE = 7, MPV_EVENT_FILE_LOADED = 8, MPV_EVENT_CLIENT_MESSAGE = 16,
+        MPV_END_FILE_REASON_EOF = 0, MPV_END_FILE_REASON_ERROR = 4;
 
     [StructLayout(LayoutKind.Sequential)]
     private unsafe struct MpvEventClientMessage

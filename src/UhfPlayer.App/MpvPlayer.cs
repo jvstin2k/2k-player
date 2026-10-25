@@ -20,6 +20,7 @@ internal sealed partial class MpvPlayer : IDisposable
     private uint _lastClickTime;
     private Point _lastClickPoint;
     private static MpvPlayer? s_hookTarget;
+    private static nint s_staticProc;
 
     /// <summary>Raised on the mpv event thread when a stream cannot be opened or breaks off.</summary>
     public event Action<string>? PlaybackFailed;
@@ -48,6 +49,11 @@ internal sealed partial class MpvPlayer : IDisposable
         _hwnd = CreateWindowExW(0, "Static", null, WS_CHILD | WS_CLIPSIBLINGS, 0, 0, 0, 0, parentHwnd, 0, 0, 0);
         if (_hwnd == 0)
             throw new InvalidOperationException($"CreateWindowEx failed: {Marshal.GetLastPInvokeError()}");
+        // Nobody in the window chain above mpv's window sets a cursor, so it kept the busy cursor from app start.
+        unsafe
+        {
+            s_staticProc = SetWindowLongPtrW(_hwnd, GWLP_WNDPROC, (nint)(delegate* unmanaged<nint, uint, nint, nint, nint>)&VideoWindowProc);
+        }
 
         _ctx = mpv_create();
         if (_ctx == 0)
@@ -94,6 +100,18 @@ internal sealed partial class MpvPlayer : IDisposable
         {
         }
         UnhookWindowsHookEx(hook);
+    }
+
+    // mpv's window asks its parent (this one) first on WM_SETCURSOR; mpv's own cursor hiding in fullscreen still wins.
+    [UnmanagedCallersOnly]
+    private static nint VideoWindowProc(nint hwnd, uint message, nint wParam, nint lParam)
+    {
+        if (message == WM_SETCURSOR)
+        {
+            SetCursor(LoadCursorW(0, IDC_ARROW));
+            return 1;
+        }
+        return CallWindowProcW(s_staticProc, hwnd, message, wParam, lParam);
     }
 
     [UnmanagedCallersOnly]
@@ -322,6 +340,21 @@ internal sealed partial class MpvPlayer : IDisposable
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool DestroyWindow(nint hwnd);
+
+    private const int GWLP_WNDPROC = -4, IDC_ARROW = 32512;
+    private const uint WM_SETCURSOR = 0x0020;
+
+    [LibraryImport("user32.dll")]
+    private static partial nint SetWindowLongPtrW(nint hwnd, int index, nint value);
+
+    [LibraryImport("user32.dll")]
+    private static partial nint CallWindowProcW(nint previous, nint hwnd, uint message, nint wParam, nint lParam);
+
+    [LibraryImport("user32.dll")]
+    private static partial nint LoadCursorW(nint instance, nint name);
+
+    [LibraryImport("user32.dll")]
+    private static partial nint SetCursor(nint cursor);
 
     private const int WH_MOUSE_LL = 14, GA_ROOT = 2, WM_QUIT = 0x0012, WM_LBUTTONDOWN = 0x0201, WM_MOUSEWHEEL = 0x020A, SM_CXDOUBLECLK = 36, SM_CYDOUBLECLK = 37;
 

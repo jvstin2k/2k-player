@@ -21,4 +21,6 @@ else { tar -xf $archive -C $target libmpv-2.dll }
 Remove-Item $archive
 # Native tools do not throw on failure, so check the result instead of trusting the exit.
 if (-not (Test-Path (Join-Path $target 'libmpv-2.dll'))) { throw "Entpacken fehlgeschlagen. Bitte 7-Zip installieren (https://www.7-zip.org) und das Skript erneut starten." }
+# Names the exact build, so release notes can point to its source (GPL).
+"$($release.tag_name) $($asset.name) $($asset.browser_download_url)" | Set-Content (Join-Path $target 'VERSION.txt')
 Write-Host "libmpv-2.dll -> $target"

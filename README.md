@@ -1,76 +1,104 @@
-<img src="docs/logo.png" width="96" alt="2k-Player Logo">
+<img src="docs/logo.png" width="96" alt="2k-Player logo">
 
-# 2k-Player für Windows
+# 2k-Player
 
-IPTV-Player für Windows im Stil von UHF (iOS/macOS). Quellen: M3U-Playlists, Xtream Codes, EPG (XMLTV, auch `.gz`).
+A fast, modern IPTV player for Windows. It plays M3U playlists and Xtream Codes accounts, and shows a programme guide from XMLTV (also `.gz`).
 
-## Technik
+**Just want to use it?** Download the installer from [2k-player-releases](https://github.com/jvstin2k/2k-player-releases/releases/latest). This repository holds the source code.
 
-- **WinUI 3 (Windows App SDK 1.8) + .NET 10**: native Windows-Oberfläche mit Mica, GPU-Composition, ReadyToRun beim Publish für schnellen Start.
-- **libmpv** als Player-Engine: FFmpeg-basiert, Hardware-Decoding (D3D11VA), robust bei HLS/MPEG-TS, schnelles Umschalten.
-- `UhfPlayer.Core` ist plattformneutral (Parser, Xtream-API, EPG) und hat Tests.
+2k-Player does not include or sell any channels, playlists or subscriptions. You need your own IPTV source.
 
-## Starten (Windows 10 1809+ / 11)
+## Features
 
-Voraussetzung: .NET 10 SDK, optional Visual Studio 2026 mit Workload „WinUI-Anwendungsentwicklung“.
+- Live TV, movies and series (Xtream Codes), M3U playlists with groups and logos
+- Programme guide with now/next, search across channels and upcoming shows
+- Favourites, hidden categories, resume playback, watched marks, next episode
+- Fullscreen with an overlay bar, mini player that stays on top, picture formats, audio and subtitle tracks
+- Hardware decoding through libmpv, automatic reconnect when a stream drops
+- Passwords and playlist URLs are kept in the Windows Credential Manager, not in plain files
+- Update button inside the app when a new release is out
+
+## Build it yourself
+
+You need Windows 10 1809 or later (or Windows 11), the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), Git and PowerShell. Visual Studio is optional; with it, install the "WinUI application development" workload.
 
 ```powershell
-./scripts/fetch-libmpv.ps1            # einmalig, holt libmpv-2.dll (ARM64: -Platform ARM64)
-dotnet test tests/UhfPlayer.Core.Tests
+git clone https://github.com/jvstin2k/2k-player.git
+cd 2k-player
+
+# Once: downloads libmpv-2.dll (the player engine) into src/UhfPlayer.App/libmpv
+./scripts/fetch-libmpv.ps1               # on ARM64: -Platform ARM64
+
+dotnet test tests/UhfPlayer.Core.Tests   # optional: parser tests
 dotnet run --project src/UhfPlayer.App -p:Platform=x64
 ```
 
-Als fertige App mit Startmenü-Eintrag installieren (nach jedem `git pull` erneut ausführen, `-Uninstall` entfernt sie):
+If PowerShell refuses to run the script, start it with `powershell -ExecutionPolicy Bypass -File scripts\fetch-libmpv.ps1`.
+
+### Standalone app
+
+To get a folder you can copy anywhere and start with `UhfPlayer.App.exe`:
+
+```powershell
+dotnet publish src/UhfPlayer.App -c Release -r win-x64 -p:Platform=x64 --self-contained -o publish
+```
+
+`scripts\install.ps1` does the same and adds a Start menu entry ("2k-Player"). Run it again after `git pull` to update; `-Uninstall` removes it.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 ```
 
-Zugangsdaten (Passwörter, Playlist- und EPG-URLs) liegen in der Windows-Anmeldeinformationsverwaltung unter „UhfPlayer“. In `%LOCALAPPDATA%\UhfPlayer` liegen `sources.json` (Quellen ohne Zugangsdaten), `state.json` (Favoriten, ausgeblendete Gruppen, Weiterschauen, Gesehen, Lautstärke), `crash.log` (Abstürze), `cache\` (Senderlisten und EPG für den Schnellstart) und `mpv.log`.
+Self-built copies do not update themselves. Only the installer from the releases repository does.
 
-## Für andere: Installer mit Auto-Update
+### Installer with auto-update
 
-Jeder Merge nach `main` baut per GitHub Actions einen Installer und veröffentlicht ihn als Release im öffentlichen Repo [2k-player-releases](https://github.com/jvstin2k/2k-player-releases). Der Code bleibt privat.
+The installer is made with [Velopack](https://velopack.io), after the publish step above:
 
-- **Installieren:** `2k-Player-win-Setup.exe` aus dem neuesten Release laden und starten. Windows zeigt beim ersten Mal „Der Computer wurde durch Windows geschützt“, weil der Installer nicht signiert ist: „Weitere Informationen“ → „Trotzdem ausführen“.
-- **Updates:** Gibt es eine neue Version, erscheint links unten „Update … installieren“. Ein Klick lädt sie und startet neu. Quellen, Zugangsdaten und Einstellungen bleiben erhalten.
-- **Deinstallieren:** Windows-Einstellungen → Apps → 2k-Player.
+```powershell
+dotnet tool install -g vpk --version 1.2.161
+vpk pack --packId 2k-Player --packVersion 1.0.0 --packDir publish --mainExe UhfPlayer.App.exe --packTitle "2k-Player" --icon src/UhfPlayer.App/Assets/AppIcon.ico
+```
 
-Die englische Startseite des Release-Repos kommt aus `docs/releases-repo/` und wird bei jedem Release mit hochgeladen. Die Release-Notes listen die Commits des gemergten PRs.
+This writes `2k-Player-win-Setup.exe` and the update files to `Releases\`. The app looks for updates in the repository named in `src/UhfPlayer.App/Updater.cs`; change it there if you publish your own releases.
 
-Einmalige Einrichtung im GitHub-Konto:
+Every merge to `main` does all of this in GitHub Actions (`.github/workflows/release.yml`) and uploads the release to [2k-player-releases](https://github.com/jvstin2k/2k-player-releases). That needs a secret `RELEASES_TOKEN`: a fine-grained token with "Contents: Read and write" on the releases repository. The releases page text comes from `docs/releases-repo/`.
 
-1. Öffentliches Repo `2k-player-releases` anlegen, mit README (Releases brauchen einen ersten Commit).
-2. Fine-grained Token anlegen: nur Repo `2k-player-releases`, Berechtigung „Contents: Read and write“.
-3. In `2k-player` unter Settings → Secrets and variables → Actions als `RELEASES_TOKEN` speichern.
+## Where data is stored
 
-## Bedienung
+- Passwords, playlist and EPG URLs: Windows Credential Manager, under "UhfPlayer"
+- `%LOCALAPPDATA%\UhfPlayer`: `sources.json` (sources without credentials), `state.json` (favourites, hidden groups, resume, watched, volume), `cache\` (channel lists and EPG for a fast start), `crash.log`, `mpv.log`
 
-| Eingabe | Aktion |
-|---------|--------|
-| Leertaste | Pause |
-| ↑ / ↓ | Vorheriger / nächster Sender |
-| ← / → | 10 s zurück / vor (Filme und Folgen) |
-| F, Doppelklick aufs Bild | Vollbild an/aus |
-| Esc | Vollbild oder Mini-Player verlassen |
-| M | Ton aus |
-| P | Mini-Player (klein, immer im Vordergrund), Doppelklick zurück |
-| I | Stream-Info (Auflösung, Codec, Bitrate) |
-| Mausrad über dem Bild, Regler neben dem Lautsprecher | Lautstärke (wird gespeichert) |
-| Stern in der Liste | Favorit |
-| Suche | findet Sender und Sendungen im EPG |
-| Spuren-Button | Tonspur, Untertitel, Bildformat, Stream-Info |
-| Rechtsklick auf Kategorie | Kategorie ausblenden (wieder einblenden über das Zahnrad) |
+## Keyboard and mouse
 
-## Aufbau
+| Input | Action |
+|-------|--------|
+| Space | Pause |
+| ↑ / ↓ | Previous / next channel |
+| ← / → | Back / forward 10 s (movies and episodes) |
+| F, double-click the picture | Fullscreen on/off |
+| Esc | Leave fullscreen or mini player |
+| M | Mute |
+| P | Mini player (small, always on top); double-click to return |
+| I | Stream info (resolution, codec, bitrate) |
+| Mouse wheel over the picture, slider next to the speaker | Volume (remembered) |
+| Star in the list | Favourite |
+| Search | Finds channels and shows in the guide |
+| Tracks button | Audio, subtitles, picture format, stream info |
+| Right-click a category | Hide it (show it again from the gear button) |
 
-| Pfad | Inhalt |
-|------|--------|
-| `src/UhfPlayer.Core/M3u` | M3U-Parser (tvg-*, group-title, `#EXTGRP`, `#EXTVLCOPT`, `url-tvg`) |
-| `src/UhfPlayer.Core/Xtream` | Xtream Codes Live-TV, Filme und Serien über `player_api.php`, EPG über `xmltv.php` |
-| `src/UhfPlayer.Core/Epg` | Streaming-XMLTV-Parser, Jetzt/Danach-Suche |
-| `src/UhfPlayer.App` | WinUI-Oberfläche, `MpvPlayer` (libmpv in einem Child-Fenster) |
+## Project layout
 
-## Bewusst noch nicht drin
+| Path | Content |
+|------|---------|
+| `src/UhfPlayer.Core/M3u` | M3U parser (tvg-*, group-title, `#EXTGRP`, `#EXTVLCOPT`, `url-tvg`) |
+| `src/UhfPlayer.Core/Xtream` | Xtream Codes live TV, movies and series via `player_api.php`, EPG via `xmltv.php` |
+| `src/UhfPlayer.Core/Epg` | Streaming XMLTV parser, now/next lookup, search |
+| `src/UhfPlayer.App` | WinUI 3 interface, `MpvPlayer` (libmpv in a child window), updater |
+| `tests/UhfPlayer.Core.Tests` | Tests for the parsers |
 
-- Catch-up, zuletzt gesehener Sender beim Start.
+Built with WinUI 3 (Windows App SDK 1.8) and .NET 10. `UhfPlayer.Core` has no Windows dependency. The internal project names still say "UhfPlayer", the app's earlier name.
+
+## License
+
+2k-Player is free software under the [GNU General Public License v3.0 or later](LICENSE). It bundles libmpv (GPL) and other libraries; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -23,6 +24,12 @@ public sealed partial class MainWindow : Window
     private readonly Dictionary<Guid, EpgGuide> _guides = [];
     private readonly MpvPlayer? _player;
     private readonly string? _playerError;
+    private Channel? _playing;
+
+    // Mouse moves over the video reach mpv's window, not XAML, so fullscreen idleness is detected by polling the cursor.
+    private readonly DispatcherTimer _idleTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    private CursorPoint _lastCursor;
+    private DateTime _lastCursorMove;
     private MediaKind _section = MediaKind.Live;
 
     /// <summary>Episodes of the series being browsed; null while the normal list is shown.</summary>
@@ -50,7 +57,12 @@ public sealed partial class MainWindow : Window
         if (_player is not null)
             _player.PlaybackFailed += error => DispatcherQueue.TryEnqueue(() => ShowStatus(InfoBarSeverity.Error, $"Wiedergabe fehlgeschlagen: {error}"));
 
-        Closed += (_, _) => _player?.Dispose();
+        _idleTimer.Tick += OnIdleTick;
+        Closed += (_, _) =>
+        {
+            _idleTimer.Stop();
+            _player?.Dispose();
+        };
         _ = ReloadAsync();
     }
 
@@ -202,6 +214,10 @@ public sealed partial class MainWindow : Window
                 return;
             }
             _player.Play(row.Channel.StreamUrl, row.Channel.UserAgent, row.Channel.Referrer);
+            _playing = row.Channel;
+            var live = row.Channel.Kind == MediaKind.Live;
+            LiveButton.Visibility = live ? Visibility.Visible : Visibility.Collapsed;
+            SeekBackButton.Visibility = SeekForwardButton.Visibility = live ? Visibility.Collapsed : Visibility.Visible;
             UpdateVideoBounds();
         }
         catch (InvalidOperationException ex)
@@ -226,17 +242,60 @@ public sealed partial class MainWindow : Window
 
     private void OnMute(object sender, RoutedEventArgs e) => _player?.ToggleMute();
 
+    private void OnSeekBack(object sender, RoutedEventArgs e) => _player?.Seek(-10);
+
+    private void OnSeekForward(object sender, RoutedEventArgs e) => _player?.Seek(10);
+
+    /// <summary>Reopens the live stream, which jumps back to the live edge after a stall.</summary>
+    private void OnLive(object sender, RoutedEventArgs e)
+    {
+        if (_playing is { } c)
+            _player?.Play(c.StreamUrl, c.UserAgent, c.Referrer);
+    }
+
     private void OnFullScreen(object sender, RoutedEventArgs e)
     {
         var full = AppWindow.Presenter.Kind != AppWindowPresenterKind.FullScreen;
         AppWindow.SetPresenter(full ? AppWindowPresenterKind.FullScreen : AppWindowPresenterKind.Default);
         GroupsColumn.Width = ChannelsColumn.Width = new GridLength(0);
-        if (!full)
+        if (full)
         {
+            _lastCursorMove = DateTime.UtcNow;
+            _idleTimer.Start();
+        }
+        else
+        {
+            _idleTimer.Stop();
+            InfoPanel.Visibility = Visibility.Visible;
             GroupsColumn.Width = new GridLength(220);
             ChannelsColumn.Width = new GridLength(380);
         }
     }
+
+    private void OnIdleTick(object? sender, object e)
+    {
+        GetCursorPos(out var cursor);
+        if (cursor.X != _lastCursor.X || cursor.Y != _lastCursor.Y)
+        {
+            _lastCursor = cursor;
+            _lastCursorMove = DateTime.UtcNow;
+            InfoPanel.Visibility = Visibility.Visible;
+        }
+        else if (DateTime.UtcNow - _lastCursorMove > TimeSpan.FromSeconds(3))
+        {
+            InfoPanel.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private struct CursorPoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetCursorPos(out CursorPoint point);
 
     private async void OnAddSource(object sender, RoutedEventArgs e)
     {

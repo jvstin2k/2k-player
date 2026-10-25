@@ -93,7 +93,7 @@
             <Border x:Name="VideoHost" CornerRadius="12" Background="Black" SizeChanged="OnVideoHostSizeChanged">
                 <TextBlock Text="Sender auswählen" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="Gray" />
             </Border>
-            <Grid Grid.Row="1" Padding="4,12,4,0" ColumnSpacing="8">
+            <Grid x:Name="InfoPanel" Grid.Row="1" Padding="4,12,4,0" ColumnSpacing="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -104,7 +104,12 @@
                     <TextBlock x:Name="NextProgramme" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+                    <Button x:Name="LiveButton" Click="OnLive" Visibility="Collapsed" ToolTipService.ToolTip="Sender neu synchronisieren">
+                        <TextBlock Text="LIVE" FontWeight="Bold" Foreground="#E5484D" />
+                    </Button>
+                    <Button x:Name="SeekBackButton" Click="OnSeekBack" Visibility="Collapsed" Content="−10 s" ToolTipService.ToolTip="10 Sekunden zurück" />
                     <Button Click="OnPause" ToolTipService.ToolTip="Pause"><SymbolIcon Symbol="Pause" /></Button>
+                    <Button x:Name="SeekForwardButton" Click="OnSeekForward" Visibility="Collapsed" Content="+10 s" ToolTipService.ToolTip="10 Sekunden vor" />
                     <Button Click="OnMute" ToolTipService.ToolTip="Ton aus"><SymbolIcon Symbol="Mute" /></Button>
                     <Button Click="OnFullScreen" ToolTipService.ToolTip="Vollbild"><SymbolIcon Symbol="FullScreen" /></Button>
                 </StackPanel>

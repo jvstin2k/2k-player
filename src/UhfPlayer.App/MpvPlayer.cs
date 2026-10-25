@@ -69,11 +69,14 @@ internal sealed partial class MpvPlayer : IDisposable
     {
         Check(mpv_set_property_string(_ctx, "user-agent", userAgent ?? Core.SourceLoader.DefaultUserAgent));
         Check(mpv_set_property_string(_ctx, "referrer", referrer ?? ""));
+        Check(mpv_set_property_string(_ctx, "pause", "no"));
         Command("loadfile", url, "replace");
         ShowWindow(_hwnd, SW_SHOW);
     }
 
     public void TogglePause() => Command("cycle", "pause");
+
+    public void Seek(int seconds) => Command("seek", seconds.ToString(), "relative");
 
     public void ToggleMute() => Command("cycle", "mute");
 

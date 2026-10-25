@@ -14,14 +14,14 @@ public sealed class ChannelRow
         Channel = channel;
         (Now, Next) = guide.NowNext(channel, now);
         Progress = Now?.Progress(now) ?? 0;
-        if (Uri.TryCreate(channel.LogoUrl, UriKind.Absolute, out var logo))
-            Logo = new BitmapImage(logo) { DecodePixelWidth = 96 };
     }
 
     public Channel Channel { get; }
     public EpgProgramme? Now { get; }
     public EpgProgramme? Next { get; }
-    public ImageSource? Logo { get; }
+    // Created on first access, i.e. only for rows the list actually shows; VOD lists run into tens of thousands.
+    public ImageSource? Logo => _logo ??= Uri.TryCreate(Channel.LogoUrl, UriKind.Absolute, out var uri) ? new BitmapImage(uri) { DecodePixelWidth = 96 } : null;
+    private ImageSource? _logo;
     public double Progress { get; }
     public string NowTitle => Now?.Title ?? "";
     public Visibility ProgressVisibility => Now is null ? Visibility.Collapsed : Visibility.Visible;

@@ -18,12 +18,15 @@ public sealed class SourceLoader(HttpClient http)
         if (source.Kind == SourceKind.M3u && FromGetPhpLink(source) is { } xtream)
             source = xtream;
         if (source.Kind == SourceKind.Xtream)
-            return await new XtreamClient(http).LoadLiveAsync(source, ct).ConfigureAwait(false);
+            return await new XtreamClient(http).LoadAsync(source, ct).ConfigureAwait(false);
 
         var location = WebUtility.HtmlDecode(source.M3uLocation ?? throw new ArgumentException("M3U source needs a URL or file path."));
         using var reader = new StreamReader(await OpenAsync(location, ct).ConfigureAwait(false));
         return await M3uParser.ParseAsync(reader, source.Id, ct).ConfigureAwait(false);
     }
+
+    public Task<IReadOnlyList<Channel>> LoadEpisodesAsync(SourceConfig source, string seriesId, CancellationToken ct = default)
+        => new XtreamClient(http).LoadEpisodesAsync(FromGetPhpLink(source) ?? source, seriesId, ct);
 
     /// <summary>
     /// Xtream panels hand out M3U links like .../get.php?username=u&amp;password=p&amp;type=m3u_plus.

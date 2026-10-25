@@ -10,7 +10,8 @@ namespace UhfPlayer.App;
 
 public sealed partial class MainWindow : Window
 {
-    private const string AllGroups = "Alle Sender";
+    private const string AllGroups = "Alle";
+    private static readonly MediaKind[] Sections = [MediaKind.Live, MediaKind.Movie, MediaKind.Series];
 
     private static readonly HttpClient Http = new(new SocketsHttpHandler { AutomaticDecompression = System.Net.DecompressionMethods.All })
     {
@@ -21,10 +22,15 @@ public sealed partial class MainWindow : Window
     private readonly List<Channel> _channels = [];
     private readonly Dictionary<Guid, EpgGuide> _guides = [];
     private readonly MpvPlayer? _player;
+    private MediaKind _section = MediaKind.Live;
+
+    /// <summary>Episodes of the series being browsed; null while the normal list is shown.</summary>
+    private IReadOnlyList<Channel>? _episodes;
 
     public MainWindow()
     {
         InitializeComponent();
+        SectionBar.SelectedItem = SectionBar.Items[0];
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1500, 900));
 
         try
@@ -59,7 +65,8 @@ public sealed partial class MainWindow : Window
 
         var errors = playlists.Where(p => p.Error is not null).Select(p => $"{p.Source.Name}: {p.Error}").ToList();
         ShowStatus(errors.Count > 0 ? InfoBarSeverity.Warning : InfoBarSeverity.Informational,
-            errors.Count > 0 ? string.Join("\n", errors) : $"{_channels.Count} Sender geladen, EPG wird geladen …");
+            errors.Count > 0 ? string.Join("\n", errors)
+                : $"{Count(MediaKind.Live)} Sender, {Count(MediaKind.Movie)} Filme, {Count(MediaKind.Series)} Serien geladen, EPG wird geladen …");
 
         // EPG files are large; load them after the channel list is already usable.
         foreach (var (source, playlist, _) in playlists)
@@ -99,9 +106,15 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private int Count(MediaKind kind) => _channels.Count(c => c.Kind == kind);
+
+    // M3U playlists list series episodes one by one, so they show up under Serien too.
+    private bool InSection(Channel c) => c.Kind == _section || (_section == MediaKind.Series && c.Kind == MediaKind.Episode);
+
     private void RefreshGroups()
     {
-        var groups = _channels.Select(c => c.Group ?? "Ohne Gruppe").Distinct().Order(StringComparer.CurrentCultureIgnoreCase);
+        _episodes = null;
+        var groups = _channels.Where(InSection).Select(c => c.Group ?? "Ohne Gruppe").Distinct().Order(StringComparer.CurrentCultureIgnoreCase);
         GroupList.ItemsSource = new[] { AllGroups }.Concat(groups).ToList();
         GroupList.SelectedIndex = 0;
         RefreshChannels();
@@ -112,15 +125,49 @@ public sealed partial class MainWindow : Window
         var group = GroupList.SelectedItem as string;
         var query = SearchBox.Text.Trim();
         var now = DateTimeOffset.Now;
+        BackButton.Visibility = _episodes is null ? Visibility.Collapsed : Visibility.Visible;
 
-        ChannelList.ItemsSource = _channels
-            .Where(c => group is null or AllGroups || (c.Group ?? "Ohne Gruppe") == group)
+        var items = _episodes ?? _channels.Where(c => InSection(c) && (group is null or AllGroups || (c.Group ?? "Ohne Gruppe") == group));
+        ChannelList.ItemsSource = items
             .Where(c => query.Length == 0 || c.Name.Contains(query, StringComparison.CurrentCultureIgnoreCase))
-            .Select(c => new ChannelRow(c, _guides.GetValueOrDefault(c.SourceId) ?? EpgGuide.Empty, now))
+            .Select(c => new ChannelRow(c, c.Kind == MediaKind.Live ? _guides.GetValueOrDefault(c.SourceId) ?? EpgGuide.Empty : EpgGuide.Empty, now))
             .ToList();
     }
 
-    private void OnGroupSelected(object sender, SelectionChangedEventArgs e) => RefreshChannels();
+    private void OnSectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs e)
+    {
+        _section = Sections[Math.Max(0, sender.Items.IndexOf(sender.SelectedItem))];
+        RefreshGroups();
+    }
+
+    private void OnGroupSelected(object sender, SelectionChangedEventArgs e)
+    {
+        _episodes = null;
+        RefreshChannels();
+    }
+
+    private void OnBack(object sender, RoutedEventArgs e)
+    {
+        _episodes = null;
+        RefreshChannels();
+    }
+
+    private async Task ShowEpisodesAsync(Channel series)
+    {
+        if (_sources.Find(s => s.Id == series.SourceId) is not { } source || series.SeriesId is null)
+            return;
+        try
+        {
+            _episodes = await Task.Run(() => _loader.LoadEpisodesAsync(source, series.SeriesId));
+            BackLabel.Text = series.Name;
+            SearchBox.Text = "";
+            RefreshChannels();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException)
+        {
+            ShowStatus(InfoBarSeverity.Error, $"Episoden von {series.Name}: {ex.Message}");
+        }
+    }
 
     private void OnSearchChanged(object sender, TextChangedEventArgs e) => RefreshChannels();
 
@@ -128,6 +175,11 @@ public sealed partial class MainWindow : Window
     {
         if (ChannelList.SelectedItem is not ChannelRow row)
             return;
+        if (row.Channel.Kind == MediaKind.Series)
+        {
+            _ = ShowEpisodesAsync(row.Channel);
+            return;
+        }
 
         NowChannel.Text = row.Channel.Name;
         NowProgramme.Text = row.Now is { } now ? $"{now.Start:HH:mm} – {now.Stop:HH:mm}  {now.Title}" : "";

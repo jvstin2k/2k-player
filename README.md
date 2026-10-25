@@ -25,12 +25,12 @@ Quellen werden in `%LOCALAPPDATA%\UhfPlayer\sources.json` gespeichert.
 | Pfad | Inhalt |
 |------|--------|
 | `src/UhfPlayer.Core/M3u` | M3U-Parser (tvg-*, group-title, `#EXTGRP`, `#EXTVLCOPT`, `url-tvg`) |
-| `src/UhfPlayer.Core/Xtream` | Xtream Codes Live-TV über `player_api.php`, EPG über `xmltv.php` |
+| `src/UhfPlayer.Core/Xtream` | Xtream Codes Live-TV, Filme und Serien über `player_api.php`, EPG über `xmltv.php` |
 | `src/UhfPlayer.Core/Epg` | Streaming-XMLTV-Parser, Jetzt/Danach-Suche |
 | `src/UhfPlayer.App` | WinUI-Oberfläche, `MpvPlayer` (libmpv in einem Child-Fenster) |
 
 ## Bewusst noch nicht drin
 
 - Steuerelemente über dem Video (UHF-Overlay): Das Video ist ein Win32-Child-Fenster, das XAML überdeckt. Nächster Schritt ist ein transparentes Overlay-Fenster.
-- VOD/Serien von Xtream, Favoriten, EPG-Raster, Catch-up, EPG-Cache auf Platte.
+- Favoriten, EPG-Raster, Catch-up, EPG-Cache auf Platte.
 - Passwörter liegen im Klartext in `sources.json` (später Windows Credential Locker).

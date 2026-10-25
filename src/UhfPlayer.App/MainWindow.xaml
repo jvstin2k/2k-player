@@ -23,7 +23,11 @@
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
-            <TextBlock Text="Gruppen" Style="{StaticResource SubtitleTextBlockStyle}" Margin="8,0,0,8" />
+            <SelectorBar x:Name="SectionBar" Margin="0,0,0,8" SelectionChanged="OnSectionChanged">
+                <SelectorBarItem Text="Live TV" />
+                <SelectorBarItem Text="Filme" />
+                <SelectorBarItem Text="Serien" />
+            </SelectorBar>
             <ListView x:Name="GroupList" Grid.Row="1" SelectionChanged="OnGroupSelected" />
             <Grid Grid.Row="2" Margin="0,8,0,0" ColumnSpacing="4">
                 <Grid.ColumnDefinitions>
@@ -47,11 +51,18 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
-            <TextBox x:Name="SearchBox" PlaceholderText="Sender suchen" TextChanged="OnSearchChanged" />
+            <TextBox x:Name="SearchBox" PlaceholderText="Suchen" TextChanged="OnSearchChanged" />
             <InfoBar x:Name="StatusBar" Grid.Row="1" Margin="0,8,0,0" IsClosable="True" />
-            <ListView x:Name="ChannelList" Grid.Row="2" Margin="0,8,0,0" SelectionChanged="OnChannelSelected">
+            <Button x:Name="BackButton" Grid.Row="2" Margin="0,8,0,0" Visibility="Collapsed" Click="OnBack">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <SymbolIcon Symbol="Back" />
+                    <TextBlock x:Name="BackLabel" />
+                </StackPanel>
+            </Button>
+            <ListView x:Name="ChannelList" Grid.Row="3" Margin="0,8,0,0" SelectionChanged="OnChannelSelected">
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="local:ChannelRow">
                         <Grid ColumnSpacing="12" Padding="0,8">

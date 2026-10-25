@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using UhfPlayer.Core;
 using UhfPlayer.Core.Epg;
 using UhfPlayer.Core.Models;
@@ -30,6 +31,7 @@ public sealed partial class MainWindow : Window
     private readonly DispatcherTimer _idleTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private CursorPoint _lastCursor;
     private DateTime _lastCursorMove;
+    private Window? _overlay;
     private MediaKind _section = MediaKind.Live;
 
     /// <summary>Episodes of the series being browsed; null while the normal list is shown.</summary>
@@ -257,19 +259,53 @@ public sealed partial class MainWindow : Window
     {
         var full = AppWindow.Presenter.Kind != AppWindowPresenterKind.FullScreen;
         AppWindow.SetPresenter(full ? AppWindowPresenterKind.FullScreen : AppWindowPresenterKind.Default);
-        GroupsColumn.Width = ChannelsColumn.Width = new GridLength(0);
         if (full)
         {
+            GroupsColumn.Width = ChannelsColumn.Width = new GridLength(0);
+            PlayerGrid.Padding = new Thickness(0);
+            // The video is a native child window that covers any XAML, so in fullscreen the bar moves into its
+            // own window on top. The video keeps the whole screen and never resizes when the bar shows or hides.
+            PlayerGrid.Children.Remove(InfoPanel);
+            _overlay ??= CreateOverlay();
+            ((Grid)_overlay.Content).Children.Add(InfoPanel);
+            PositionOverlay();
+            _overlay.AppWindow.Show(false);
             _lastCursorMove = DateTime.UtcNow;
             _idleTimer.Start();
         }
         else
         {
             _idleTimer.Stop();
-            InfoPanel.Visibility = Visibility.Visible;
+            _overlay?.AppWindow.Hide();
+            ((Grid?)_overlay?.Content)?.Children.Remove(InfoPanel);
+            PlayerGrid.Children.Add(InfoPanel);
+            PlayerGrid.Padding = new Thickness(6, 12, 12, 12);
             GroupsColumn.Width = new GridLength(220);
             ChannelsColumn.Width = new GridLength(380);
         }
+    }
+
+    private Window CreateOverlay()
+    {
+        var overlay = new Window { Content = new Grid { Padding = new Thickness(24, 12, 24, 16) }, SystemBackdrop = new DesktopAcrylicBackdrop() };
+        var presenter = OverlappedPresenter.Create();
+        presenter.SetBorderAndTitleBar(false, false);
+        presenter.IsResizable = false;
+        presenter.IsMaximizable = presenter.IsMinimizable = false;
+        overlay.AppWindow.SetPresenter(presenter);
+        overlay.AppWindow.IsShownInSwitchers = false;
+        // Owned by the main window: always above it, never in the taskbar, closes with it.
+        SetWindowLongPtrW(WinRT.Interop.WindowNative.GetWindowHandle(overlay), GWLP_HWNDPARENT, WinRT.Interop.WindowNative.GetWindowHandle(this));
+        Closed += (_, _) => overlay.Close();
+        return overlay;
+    }
+
+    private void PositionOverlay()
+    {
+        var height = (int)(130 * (Content.XamlRoot?.RasterizationScale ?? 1));
+        var pos = AppWindow.Position;
+        var size = AppWindow.Size;
+        _overlay!.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(pos.X, pos.Y + size.Height - height, size.Width, height));
     }
 
     private void OnIdleTick(object? sender, object e)
@@ -279,11 +315,15 @@ public sealed partial class MainWindow : Window
         {
             _lastCursor = cursor;
             _lastCursorMove = DateTime.UtcNow;
-            InfoPanel.Visibility = Visibility.Visible;
+            if (_overlay is { AppWindow.IsVisible: false })
+            {
+                PositionOverlay();
+                _overlay.AppWindow.Show(false);
+            }
         }
-        else if (DateTime.UtcNow - _lastCursorMove > TimeSpan.FromSeconds(3))
+        else if (DateTime.UtcNow - _lastCursorMove > TimeSpan.FromSeconds(1.5))
         {
-            InfoPanel.Visibility = Visibility.Collapsed;
+            _overlay?.AppWindow.Hide();
         }
     }
 
@@ -296,6 +336,11 @@ public sealed partial class MainWindow : Window
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool GetCursorPos(out CursorPoint point);
+
+    private const int GWLP_HWNDPARENT = -8;
+
+    [LibraryImport("user32.dll")]
+    private static partial nint SetWindowLongPtrW(nint hwnd, int index, nint value);
 
     private async void OnAddSource(object sender, RoutedEventArgs e)
     {

@@ -85,7 +85,7 @@
         </Grid>
 
         <!-- Player -->
-        <Grid Grid.Column="2" Padding="6,12,12,12">
+        <Grid x:Name="PlayerGrid" Grid.Column="2" Padding="6,12,12,12">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />

@@ -672,9 +672,12 @@ public sealed partial class MainWindow : Window
     {
         GetCursorPos(out var cursor);
         // Sensor jitter and touchpads report tiny moves without anyone touching the mouse; ignore those.
-        if (Math.Abs(cursor.X - _lastCursor.X) + Math.Abs(cursor.Y - _lastCursor.Y) > CursorMoveThreshold)
-        {
+        var moved = Math.Abs(cursor.X - _lastCursor.X) + Math.Abs(cursor.Y - _lastCursor.Y) > CursorMoveThreshold;
+        if (moved)
             _lastCursor = cursor;
+        // Only moves on the fullscreen monitor count; working on a second screen must not bring up the bar.
+        if (moved && IsOnWindow(cursor))
+        {
             _lastCursorMove = DateTime.UtcNow;
             if (_overlay is { AppWindow.IsVisible: false })
             {
@@ -689,6 +692,14 @@ public sealed partial class MainWindow : Window
     }
 
     private const int CursorMoveThreshold = 12; // physical pixels
+
+    private bool IsOnWindow(CursorPoint cursor)
+    {
+        // Both AppWindow and GetCursorPos use physical screen pixels (per-monitor DPI aware).
+        var pos = AppWindow.Position;
+        var size = AppWindow.Size;
+        return cursor.X >= pos.X && cursor.X < pos.X + size.Width && cursor.Y >= pos.Y && cursor.Y < pos.Y + size.Height;
+    }
 
     private struct CursorPoint
     {

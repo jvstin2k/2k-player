@@ -50,7 +50,7 @@ public sealed partial class MainWindow : Window
     private readonly DispatcherTimer _idleTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private CursorPoint _lastCursor;
     private DateTime _lastCursorMove;
-    private Window? _overlay;
+    private FullscreenBar? _bar;
 
     private Section _section;
 
@@ -412,6 +412,7 @@ public sealed partial class MainWindow : Window
 
             LiveButton.Visibility = live ? Visibility.Visible : Visibility.Collapsed;
             SeekBackButton.Visibility = SeekForwardButton.Visibility = live ? Visibility.Collapsed : Visibility.Visible;
+            SyncBar();
             UpdateVideoBounds();
         }
         catch (InvalidOperationException ex)
@@ -451,6 +452,7 @@ public sealed partial class MainWindow : Window
     {
         _paused = paused;
         PlayPauseIcon.Glyph = paused ? "" : "";
+        SyncBar();
     }
 
     private void TogglePause()
@@ -466,6 +468,7 @@ public sealed partial class MainWindow : Window
         _muted = muted;
         _player?.SetProperty("mute", muted ? "yes" : "no");
         MuteIcon.Glyph = muted ? "" : "";
+        SyncBar();
     }
 
     private void SetVolume(double volume)
@@ -477,6 +480,7 @@ public sealed partial class MainWindow : Window
             SetMuted(false);
         if (VolumeSlider.Value != volume)
             VolumeSlider.Value = volume; // raises OnVolumeChanged once more, which finds nothing to change
+        SyncBar();
     }
 
     private void OnVolumeChanged(object sender, RangeBaseValueChangedEventArgs e)
@@ -501,32 +505,34 @@ public sealed partial class MainWindow : Window
         SetPaused(false);
     }
 
-    private void OnTracksOpening(object sender, object e)
+    // Shared by the bar's flyout and the fullscreen bar's copy of it.
+    private void OnTracksOpening(object? sender, object e)
     {
-        TracksFlyout.Items.Clear();
+        var flyout = (MenuFlyout)sender!;
+        flyout.Items.Clear();
         var tracks = _player?.Tracks() ?? [];
-        AddTracks("Tonspur", "audio", "aid", tracks, allowOff: false);
-        TracksFlyout.Items.Add(new MenuFlyoutSeparator());
-        AddTracks("Untertitel", "sub", "sid", tracks, allowOff: true);
+        AddTracks(flyout, "Tonspur", "audio", "aid", tracks, allowOff: false);
+        flyout.Items.Add(new MenuFlyoutSeparator());
+        AddTracks(flyout, "Untertitel", "sub", "sid", tracks, allowOff: true);
     }
 
-    private void AddTracks(string header, string type, string property, IReadOnlyList<MpvTrack> tracks, bool allowOff)
+    private void AddTracks(MenuFlyout flyout, string header, string type, string property, IReadOnlyList<MpvTrack> tracks, bool allowOff)
     {
-        TracksFlyout.Items.Add(new MenuFlyoutItem { Text = header, IsEnabled = false });
+        flyout.Items.Add(new MenuFlyoutItem { Text = header, IsEnabled = false });
         var ofType = tracks.Where(t => t.Type == type).ToList();
         if (allowOff)
-            AddTrackItem("Aus", !ofType.Any(t => t.Selected), property, "no");
+            AddTrackItem(flyout, "Aus", !ofType.Any(t => t.Selected), property, "no");
         foreach (var track in ofType)
-            AddTrackItem(track.Label, track.Selected, property, track.Id);
+            AddTrackItem(flyout, track.Label, track.Selected, property, track.Id);
         if (ofType.Count == 0 && !allowOff)
-            TracksFlyout.Items.Add(new MenuFlyoutItem { Text = "Keine", IsEnabled = false });
+            flyout.Items.Add(new MenuFlyoutItem { Text = "Keine", IsEnabled = false });
     }
 
-    private void AddTrackItem(string text, bool selected, string property, string value)
+    private void AddTrackItem(MenuFlyout flyout, string text, bool selected, string property, string value)
     {
         var item = new ToggleMenuFlyoutItem { Text = text, IsChecked = selected };
         item.Click += (_, _) => _player?.SetProperty(property, value);
-        TracksFlyout.Items.Add(item);
+        flyout.Items.Add(item);
     }
 
     // ---------------------------------------------------------------- guide
@@ -654,13 +660,12 @@ public sealed partial class MainWindow : Window
             SidebarColumn.Width = ChannelsColumn.Width = new GridLength(0);
             PlayerGrid.Margin = new Thickness(0);
             StatusBar.IsOpen = false;
-            // The video is a native child window that covers any XAML, so in fullscreen the bar moves into its
-            // own window on top. The video keeps the whole screen and never resizes when the bar shows or hides.
-            PlayerGrid.Children.Remove(InfoPanel);
-            _overlay ??= CreateOverlay();
-            ((Grid)_overlay.Content).Children.Add(InfoPanel);
-            PositionOverlay();
-            _overlay.AppWindow.Show(false);
+            // In fullscreen the controls are in FullscreenBar's own window; the video keeps the whole screen.
+            InfoPanel.Visibility = Visibility.Collapsed;
+            _bar ??= CreateBar();
+            SyncBar();
+            PositionBar();
+            _bar.Window.AppWindow.Show(false);
             GetCursorPos(out _lastCursor);
             _lastCursorMove = DateTime.UtcNow;
             _idleTimer.Start();
@@ -668,9 +673,8 @@ public sealed partial class MainWindow : Window
         else
         {
             _idleTimer.Stop();
-            _overlay?.AppWindow.Hide();
-            ((Grid?)_overlay?.Content)?.Children.Remove(InfoPanel);
-            PlayerGrid.Children.Add(InfoPanel);
+            _bar?.Window.AppWindow.Hide();
+            InfoPanel.Visibility = Visibility.Visible;
             PlayerGrid.Margin = new Thickness(0, 0, 12, 12);
             TitleBarRow.Height = new GridLength(44);
             SidebarColumn.Width = new GridLength(248);
@@ -678,29 +682,43 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private Window CreateOverlay()
+    private FullscreenBar CreateBar()
     {
-        var content = new Grid { Padding = new Thickness(24, 0, 24, 16) };
-        content.PreviewKeyDown += OnPreviewKeyDown;
-        var overlay = new Window { Content = content, SystemBackdrop = new DesktopAcrylicBackdrop() };
-        var presenter = OverlappedPresenter.Create();
-        presenter.SetBorderAndTitleBar(false, false);
-        presenter.IsResizable = false;
-        presenter.IsMaximizable = presenter.IsMinimizable = false;
-        overlay.AppWindow.SetPresenter(presenter);
-        overlay.AppWindow.IsShownInSwitchers = false;
-        // Owned by the main window: always above it, never in the taskbar, closes with it.
-        SetWindowLongPtrW(WinRT.Interop.WindowNative.GetWindowHandle(overlay), GWLP_HWNDPARENT, WinRT.Interop.WindowNative.GetWindowHandle(this));
-        Closed += (_, _) => overlay.Close();
-        return overlay;
+        var bar = new FullscreenBar(this);
+        ((UIElement)bar.Window.Content).PreviewKeyDown += OnPreviewKeyDown;
+        bar.Live.Click += OnLive;
+        bar.SeekBack.Click += OnSeekBack;
+        bar.SeekForward.Click += OnSeekForward;
+        bar.Pause.Click += OnPause;
+        bar.Mute.Click += OnMute;
+        bar.Exit.Click += OnFullScreen;
+        bar.Tracks.Opening += OnTracksOpening;
+        bar.Volume.Value = _state.Volume;
+        bar.Volume.ValueChanged += OnVolumeChanged;
+        return bar;
     }
 
-    private void PositionOverlay()
+    /// <summary>Copies the player state shown in InfoPanel to the fullscreen bar.</summary>
+    private void SyncBar()
     {
-        var height = (int)(130 * (Content.XamlRoot?.RasterizationScale ?? 1));
+        if (_bar is null)
+            return;
+        _bar.Channel.Text = NowChannel.Text;
+        _bar.Programme.Text = string.IsNullOrEmpty(NowProgramme.Text) ? "" : $"{NowTime.Text}  {NowProgramme.Text}";
+        _bar.Live.Visibility = LiveButton.Visibility;
+        _bar.SeekBack.Visibility = _bar.SeekForward.Visibility = SeekBackButton.Visibility;
+        _bar.PauseIcon.Glyph = PlayPauseIcon.Glyph;
+        _bar.MuteIcon.Glyph = MuteIcon.Glyph;
+        if (_bar.Volume.Value != _state.Volume)
+            _bar.Volume.Value = _state.Volume;
+    }
+
+    private void PositionBar()
+    {
+        var height = (int)(FullscreenBar.HeightDip * (Content.XamlRoot?.RasterizationScale ?? 1));
         var pos = AppWindow.Position;
         var size = AppWindow.Size;
-        _overlay!.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(pos.X, pos.Y + size.Height - height, size.Width, height));
+        _bar!.Window.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(pos.X, pos.Y + size.Height - height, size.Width, height));
     }
 
     private void OnIdleTick(object? sender, object e)
@@ -714,15 +732,15 @@ public sealed partial class MainWindow : Window
         if (moved && IsOnWindow(cursor))
         {
             _lastCursorMove = DateTime.UtcNow;
-            if (_overlay is { AppWindow.IsVisible: false })
+            if (_bar is { Window.AppWindow.IsVisible: false })
             {
-                PositionOverlay();
-                _overlay.AppWindow.Show(false);
+                PositionBar();
+                _bar.Window.AppWindow.Show(false);
             }
         }
         else if (DateTime.UtcNow - _lastCursorMove > TimeSpan.FromSeconds(1.5))
         {
-            _overlay?.AppWindow.Hide();
+            _bar?.Window.AppWindow.Hide();
         }
     }
 
@@ -745,11 +763,6 @@ public sealed partial class MainWindow : Window
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool GetCursorPos(out CursorPoint point);
-
-    private const int GWLP_HWNDPARENT = -8;
-
-    [LibraryImport("user32.dll")]
-    private static partial nint SetWindowLongPtrW(nint hwnd, int index, nint value);
 
     // ---------------------------------------------------------------- sources and settings
 

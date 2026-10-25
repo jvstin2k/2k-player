@@ -177,7 +177,7 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Moves into a separate overlay window in fullscreen, see ToggleFullScreen -->
+                <!-- Hidden in fullscreen, where FullscreenBar shows a copy of these controls -->
                 <Grid x:Name="InfoPanel" Grid.Row="1" Margin="0,12,0,0" Padding="16,12" CornerRadius="12" ColumnSpacing="16"
                       Background="{ThemeResource LayerFillColorDefaultBrush}"
                       BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">

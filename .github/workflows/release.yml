@@ -61,7 +61,7 @@ jobs:
         shell: pwsh
         run: |
           # packId differs from the data folder %LOCALAPPDATA%\UhfPlayer, which an uninstall must not delete.
-          vpk pack --packId UhfPlayerApp --packVersion "1.0.${{ github.run_number }}" --packDir publish --mainExe UhfPlayer.App.exe --packTitle "UHF Player"
+          vpk pack --packId 2k-Player --packVersion "1.0.${{ github.run_number }}" --packDir publish --mainExe UhfPlayer.App.exe --packTitle "2k-Player" --icon src/UhfPlayer.App/Assets/AppIcon.ico
           if ($LASTEXITCODE) { throw "vpk pack failed" }
 
       - name: Upload release
@@ -71,12 +71,12 @@ jobs:
           RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
           $version = "1.0.${{ github.run_number }}"
-          vpk upload github --repoUrl $env:RELEASES_REPO --token $env:RELEASES_TOKEN --publish --releaseName "UHF Player $version" --tag "v$version"
+          vpk upload github --repoUrl $env:RELEASES_REPO --token $env:RELEASES_TOKEN --publish --releaseName "2k-Player $version" --tag "v$version"
           if ($LASTEXITCODE) { throw "vpk upload failed" }
 
       - name: Keep the installer of a pull request for testing
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: UHF-Player-Setup
+          name: 2k-Player-Setup
           path: Releases/*Setup.exe

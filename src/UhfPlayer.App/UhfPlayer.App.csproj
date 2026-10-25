@@ -5,6 +5,10 @@
     <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
     <RootNamespace>UhfPlayer.App</RootNamespace>
+    <!-- Display name; the exe, namespaces and %LOCALAPPDATA%\UhfPlayer keep the old name so existing data stays. -->
+    <Product>2k-Player</Product>
+    <AssemblyTitle>2k-Player</AssemblyTitle>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Platforms>x64;ARM64</Platforms>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
@@ -27,6 +31,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\UhfPlayer.Core\UhfPlayer.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\AppIcon.ico;Assets\Logo.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- libmpv-2.dll is fetched by scripts/fetch-libmpv.ps1 and copied next to the exe. -->

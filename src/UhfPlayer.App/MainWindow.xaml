@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:UhfPlayer.App"
-    Title="UHF Player">
+    Title="2k-Player">
 
     <Window.SystemBackdrop>
         <MicaBackdrop Kind="BaseAlt" />
@@ -18,8 +18,8 @@
         <!-- Title bar (content extends into it, see MainWindow constructor) -->
         <Grid x:Name="AppTitleBar" Padding="18,0,0,0">
             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                <FontIcon Glyph="&#xE7F4;" FontSize="16" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                <TextBlock Text="UHF Player" Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold" />
+                <Image x:Name="TitleLogo" Width="18" Height="18" />
+                <TextBlock Text="2k-Player" Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold" />
             </StackPanel>
         </Grid>
 

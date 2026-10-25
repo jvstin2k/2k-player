@@ -16,7 +16,7 @@ internal sealed partial class MpvPlayer : IDisposable
     private readonly nint _hwnd;
     private readonly Thread _events;
     private volatile bool _disposed;
-    private readonly nint _mouseHook;
+    private uint _mouseThreadId;
     private uint _lastClickTime;
     private Point _lastClickPoint;
     private static MpvPlayer? s_hookTarget;
@@ -76,12 +76,24 @@ internal sealed partial class MpvPlayer : IDisposable
 
         // mpv's own window only sees the wheel while it has keyboard focus, which XAML keeps, and its double-click
         // detection did not fire for embedded windows. A low-level hook sees every click and wheel turn regardless.
-        // It runs on this (the UI) thread's message loop, so the callback must stay cheap.
+        // It gets its own thread: Windows silently drops a low-level hook whose thread is busy for too long once,
+        // and the UI thread is busy while big playlists load.
         s_hookTarget = this;
-        unsafe
+        using var ready = new ManualResetEventSlim();
+        new Thread(() => MouseLoop(ready)) { IsBackground = true, Name = "mouse hook" }.Start();
+        ready.Wait();
+    }
+
+    private unsafe void MouseLoop(ManualResetEventSlim ready)
+    {
+        _mouseThreadId = GetCurrentThreadId();
+        var hook = SetWindowsHookExW(WH_MOUSE_LL, (nint)(delegate* unmanaged<int, nint, nint, nint>)&MouseHook, GetModuleHandleW(null), 0);
+        ready.Set();
+        // The hook is called from inside GetMessage; WM_QUIT from Dispose ends the loop.
+        while (GetMessageW(out _, 0, 0, 0) > 0)
         {
-            _mouseHook = SetWindowsHookExW(WH_MOUSE_LL, (nint)(delegate* unmanaged<int, nint, nint, nint>)&MouseHook, GetModuleHandleW(null), 0);
         }
+        UnhookWindowsHookEx(hook);
     }
 
     [UnmanagedCallersOnly]
@@ -97,9 +109,10 @@ internal sealed partial class MpvPlayer : IDisposable
     {
         if (message is not (WM_MOUSEWHEEL or WM_LBUTTONDOWN))
             return false;
-        // Hidden windows and anything on top (other apps, the fullscreen bar) are never hit.
-        var hit = WindowFromPoint(data->Point);
-        if (hit != _hwnd && !IsChild(_hwnd, hit))
+        // Over the visible video, and not under anything else on top (other apps, the fullscreen bar window).
+        if (!IsWindowVisible(_hwnd) || !GetWindowRect(_hwnd, out var video)
+            || data->Point.X < video.Left || data->Point.X >= video.Right || data->Point.Y < video.Top || data->Point.Y >= video.Bottom
+            || GetAncestor(WindowFromPoint(data->Point), GA_ROOT) != GetAncestor(_hwnd, GA_ROOT))
             return false;
 
         if (message == WM_MOUSEWHEEL)
@@ -212,8 +225,8 @@ internal sealed partial class MpvPlayer : IDisposable
     public void Dispose()
     {
         _disposed = true;
-        UnhookWindowsHookEx(_mouseHook);
         s_hookTarget = null;
+        PostThreadMessageW(_mouseThreadId, WM_QUIT, 0, 0);
         mpv_wakeup(_ctx);
         _events.Join();
         mpv_terminate_destroy(_ctx);
@@ -302,7 +315,7 @@ internal sealed partial class MpvPlayer : IDisposable
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool DestroyWindow(nint hwnd);
 
-    private const int WH_MOUSE_LL = 14, WM_LBUTTONDOWN = 0x0201, WM_MOUSEWHEEL = 0x020A, SM_CXDOUBLECLK = 36, SM_CYDOUBLECLK = 37;
+    private const int WH_MOUSE_LL = 14, GA_ROOT = 2, WM_QUIT = 0x0012, WM_LBUTTONDOWN = 0x0201, WM_MOUSEWHEEL = 0x020A, SM_CXDOUBLECLK = 36, SM_CYDOUBLECLK = 37;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Point
@@ -337,9 +350,47 @@ internal sealed partial class MpvPlayer : IDisposable
     [LibraryImport("user32.dll")]
     private static partial nint WindowFromPoint(Point point);
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Rect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Msg
+    {
+        public nint Hwnd;
+        public uint Message;
+        public nint WParam;
+        public nint LParam;
+        public uint Time;
+        public Point Point;
+        public uint Private;
+    }
+
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool IsChild(nint parent, nint hwnd);
+    private static partial bool GetWindowRect(nint hwnd, out Rect rect);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool IsWindowVisible(nint hwnd);
+
+    [LibraryImport("user32.dll")]
+    private static partial nint GetAncestor(nint hwnd, uint flags);
+
+    [LibraryImport("user32.dll")]
+    private static partial int GetMessageW(out Msg msg, nint hwnd, uint min, uint max);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool PostThreadMessageW(uint threadId, uint message, nint wParam, nint lParam);
+
+    [LibraryImport("kernel32.dll")]
+    private static partial uint GetCurrentThreadId();
 
     [LibraryImport("user32.dll")]
     private static partial uint GetDoubleClickTime();

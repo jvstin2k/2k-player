@@ -82,8 +82,11 @@ public sealed partial class MainWindow : Window
 
         if (_player is not null)
         {
-            _player.PlaybackFailed += error => DispatcherQueue.TryEnqueue(() => ShowStatus(InfoBarSeverity.Error, $"Wiedergabe fehlgeschlagen: {error}"));
-            _player.MessageReceived += (name, arg) => DispatcherQueue.TryEnqueue(() => OnPlayerMessage(name, arg));
+            // Both events come from background threads, which must not touch the window itself, not even its
+            // DispatcherQueue property; capture the queue here on the UI thread.
+            var ui = DispatcherQueue;
+            _player.PlaybackFailed += error => ui.TryEnqueue(() => ShowStatus(InfoBarSeverity.Error, $"Wiedergabe fehlgeschlagen: {error}"));
+            _player.MessageReceived += (name, arg) => ui.TryEnqueue(() => OnPlayerMessage(name, arg));
         }
 
         VolumeSlider.Value = _state.Volume;

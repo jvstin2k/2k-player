@@ -99,8 +99,16 @@ internal sealed partial class MpvPlayer : IDisposable
     [UnmanagedCallersOnly]
     private static unsafe nint MouseHook(int code, nint message, nint data)
     {
-        if (code >= 0 && s_hookTarget is { } player && player.OnMouse((int)message, (MouseHookData*)data))
-            return 1;
+        try
+        {
+            if (code >= 0 && s_hookTarget is { } player && player.OnMouse((int)message, (MouseHookData*)data))
+                return 1;
+        }
+        catch (Exception ex)
+        {
+            // An exception escaping a native callback kills the process without any handler seeing it.
+            CrashLog.Write(ex);
+        }
         return CallNextHookEx(0, code, message, data);
     }
 

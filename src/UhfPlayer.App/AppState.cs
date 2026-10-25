@@ -11,6 +11,21 @@ internal static class AppPaths
     public static readonly string Cache = Directory.CreateDirectory(Path.Combine(Root, "cache")).FullName;
 }
 
+/// <summary>Appends crashes to crash.log, so they can be reported from a machine nobody here can debug.</summary>
+internal static class CrashLog
+{
+    public static void Write(object exception)
+    {
+        try
+        {
+            File.AppendAllText(Path.Combine(AppPaths.Root, "crash.log"), $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {exception}{Environment.NewLine}{Environment.NewLine}");
+        }
+        catch (IOException)
+        {
+        }
+    }
+}
+
 /// <summary>Per-user choices that outlive a session: favorites, hidden groups, resume positions and volume.</summary>
 internal sealed class AppState
 {

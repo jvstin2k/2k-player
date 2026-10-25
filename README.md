@@ -18,7 +18,7 @@ dotnet test tests/UhfPlayer.Core.Tests
 dotnet run --project src/UhfPlayer.App -p:Platform=x64
 ```
 
-In `%LOCALAPPDATA%\UhfPlayer` liegen `sources.json` (Quellen), `state.json` (Favoriten, ausgeblendete Gruppen, Weiterschauen), `cache\` (Senderlisten und EPG für den Schnellstart) und `mpv.log`.
+In `%LOCALAPPDATA%\UhfPlayer` liegen `sources.json` (Quellen), `state.json` (Favoriten, ausgeblendete Gruppen, Weiterschauen, Lautstärke), `crash.log` (Abstürze), `cache\` (Senderlisten und EPG für den Schnellstart) und `mpv.log`.
 
 ## Bedienung
 

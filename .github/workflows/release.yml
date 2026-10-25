@@ -49,7 +49,7 @@ jobs:
           if ($LASTEXITCODE) { throw "dotnet publish failed" }
           Get-ChildItem publish -Recurse -File -Exclude *.dll | ForEach-Object { $_.FullName.Substring((Resolve-Path publish).Path.Length + 1) }
           # Without the .pri the app has no XAML resources and Windows kills it at start, before it can log anything.
-          if (-not (Get-ChildItem publish -Filter *.pri)) { throw "No .pri file in the publish output" }
+          if (-not (Test-Path publish/TwoKPlayer.App.pri)) { throw "TwoKPlayer.App.pri is missing from the publish output" }
 
       - name: Install vpk
         shell: pwsh

@@ -16,23 +16,27 @@ internal sealed partial class MpvPlayer : IDisposable
     private readonly nint _hwnd;
     private readonly Thread _events;
     private volatile bool _disposed;
+    private readonly nint _mouseHook;
+    private uint _lastClickTime;
+    private Point _lastClickPoint;
+    private static MpvPlayer? s_hookTarget;
 
     /// <summary>Raised on the mpv event thread when a stream cannot be opened or breaks off.</summary>
     public event Action<string>? PlaybackFailed;
 
-    /// <summary>Raised on the mpv event thread for "script-message uhf &lt;name&gt; [arg]" bindings in InputConf.</summary>
+    /// <summary>
+    /// Raised on the mpv event thread for "script-message uhf &lt;name&gt; [arg]" bindings in InputConf, and on the
+    /// UI thread for mouse input over the video ("fullscreen" on double-click, "volume" with +5/-5 on the wheel).
+    /// </summary>
     public event Action<string, string?>? MessageReceived;
 
-    // Keys and mouse over the video go to mpv's window, not to XAML. These bindings handle them in mpv
-    // and forward what only the app can do (fullscreen, switching channels) as client messages.
+    // Keys over the video go to mpv's window, not to XAML. These bindings handle them in mpv and forward what
+    // only the app can do (fullscreen, switching channels) as client messages. Mouse input is handled by MouseHook.
     private const string InputConf = """
         SPACE cycle pause
-        m cycle mute
+        m script-message uhf mute
         LEFT seek -10
         RIGHT seek 10
-        WHEEL_UP add volume 5
-        WHEEL_DOWN add volume -5
-        MBTN_LEFT_DBL script-message uhf fullscreen
         f script-message uhf fullscreen
         ESC script-message uhf exit-fullscreen
         UP script-message uhf channel -1
@@ -69,6 +73,54 @@ internal sealed partial class MpvPlayer : IDisposable
 
         _events = new Thread(EventLoop) { IsBackground = true, Name = "mpv events" };
         _events.Start();
+
+        // mpv's own window only sees the wheel while it has keyboard focus, which XAML keeps, and its double-click
+        // detection did not fire for embedded windows. A low-level hook sees every click and wheel turn regardless.
+        // It runs on this (the UI) thread's message loop, so the callback must stay cheap.
+        s_hookTarget = this;
+        unsafe
+        {
+            _mouseHook = SetWindowsHookExW(WH_MOUSE_LL, (nint)(delegate* unmanaged<int, nint, nint, nint>)&MouseHook, GetModuleHandleW(null), 0);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static unsafe nint MouseHook(int code, nint message, nint data)
+    {
+        if (code >= 0 && s_hookTarget is { } player && player.OnMouse((int)message, (MouseHookData*)data))
+            return 1;
+        return CallNextHookEx(0, code, message, data);
+    }
+
+    /// <returns>true to swallow the event, so the wheel does not also scroll the focused list.</returns>
+    private unsafe bool OnMouse(int message, MouseHookData* data)
+    {
+        if (message is not (WM_MOUSEWHEEL or WM_LBUTTONDOWN))
+            return false;
+        // Hidden windows and anything on top (other apps, the fullscreen bar) are never hit.
+        var hit = WindowFromPoint(data->Point);
+        if (hit != _hwnd && !IsChild(_hwnd, hit))
+            return false;
+
+        if (message == WM_MOUSEWHEEL)
+        {
+            MessageReceived?.Invoke("volume", (short)(data->MouseData >> 16) > 0 ? "5" : "-5");
+            return true;
+        }
+
+        if (data->Time - _lastClickTime <= GetDoubleClickTime()
+            && Math.Abs(data->Point.X - _lastClickPoint.X) <= GetSystemMetrics(SM_CXDOUBLECLK)
+            && Math.Abs(data->Point.Y - _lastClickPoint.Y) <= GetSystemMetrics(SM_CYDOUBLECLK))
+        {
+            _lastClickTime = 0;
+            MessageReceived?.Invoke("fullscreen", null);
+        }
+        else
+        {
+            _lastClickTime = data->Time;
+            _lastClickPoint = data->Point;
+        }
+        return false;
     }
 
     // Without this loop, failures after loadfile (bad URL, 401 on the stream, unsupported codec) would go unnoticed.
@@ -111,8 +163,6 @@ internal sealed partial class MpvPlayer : IDisposable
     public void TogglePause() => Command("cycle", "pause");
 
     public void Seek(int seconds) => Command("seek", seconds.ToString(), "relative");
-
-    public void ToggleMute() => Command("cycle", "mute");
 
     public void SetVisible(bool visible) => ShowWindow(_hwnd, visible ? SW_SHOW : SW_HIDE);
 
@@ -162,6 +212,8 @@ internal sealed partial class MpvPlayer : IDisposable
     public void Dispose()
     {
         _disposed = true;
+        UnhookWindowsHookEx(_mouseHook);
+        s_hookTarget = null;
         mpv_wakeup(_ctx);
         _events.Join();
         mpv_terminate_destroy(_ctx);
@@ -249,4 +301,49 @@ internal sealed partial class MpvPlayer : IDisposable
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool DestroyWindow(nint hwnd);
+
+    private const int WH_MOUSE_LL = 14, WM_LBUTTONDOWN = 0x0201, WM_MOUSEWHEEL = 0x020A, SM_CXDOUBLECLK = 36, SM_CYDOUBLECLK = 37;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Point
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MouseHookData
+    {
+        public Point Point;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public nint ExtraInfo;
+    }
+
+    [LibraryImport("user32.dll")]
+    private static partial nint SetWindowsHookExW(int idHook, nint proc, nint module, uint threadId);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool UnhookWindowsHookEx(nint hook);
+
+    [LibraryImport("user32.dll")]
+    private static partial nint CallNextHookEx(nint hook, int code, nint wParam, nint lParam);
+
+    [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial nint GetModuleHandleW(string? name);
+
+    [LibraryImport("user32.dll")]
+    private static partial nint WindowFromPoint(Point point);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool IsChild(nint parent, nint hwnd);
+
+    [LibraryImport("user32.dll")]
+    private static partial uint GetDoubleClickTime();
+
+    [LibraryImport("user32.dll")]
+    private static partial int GetSystemMetrics(int index);
 }

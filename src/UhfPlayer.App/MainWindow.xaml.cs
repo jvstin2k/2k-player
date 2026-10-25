@@ -1,7 +1,9 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using UhfPlayer.Core;
@@ -84,10 +86,15 @@ public sealed partial class MainWindow : Window
             _player.MessageReceived += (name, arg) => DispatcherQueue.TryEnqueue(() => OnPlayerMessage(name, arg));
         }
 
+        VolumeSlider.Value = _state.Volume;
+        VolumeSlider.ValueChanged += OnVolumeChanged; // only now, so setting the saved value is not taken as a change
+        _player?.SetProperty("volume", _state.Volume.ToString(CultureInfo.InvariantCulture));
+
         _idleTimer.Tick += OnIdleTick;
         Closed += (_, _) =>
         {
             SaveResume();
+            _state.Save();
             _idleTimer.Stop();
             _player?.Dispose();
         };
@@ -449,11 +456,30 @@ public sealed partial class MainWindow : Window
         SetPaused(!_paused);
     }
 
-    private void ToggleMute()
+    private void ToggleMute() => SetMuted(!_muted);
+
+    private void SetMuted(bool muted)
     {
-        _player?.ToggleMute();
-        _muted = !_muted;
-        MuteIcon.Glyph = _muted ? "" : "";
+        _muted = muted;
+        _player?.SetProperty("mute", muted ? "yes" : "no");
+        MuteIcon.Glyph = muted ? "" : "";
+    }
+
+    private void SetVolume(double volume)
+    {
+        volume = Math.Clamp(Math.Round(volume), 0, 100);
+        _state.Volume = volume;
+        _player?.SetProperty("volume", volume.ToString(CultureInfo.InvariantCulture));
+        if (_muted)
+            SetMuted(false);
+        if (VolumeSlider.Value != volume)
+            VolumeSlider.Value = volume; // raises OnVolumeChanged once more, which finds nothing to change
+    }
+
+    private void OnVolumeChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        if (e.NewValue != _state.Volume)
+            SetVolume(e.NewValue);
     }
 
     private void OnPause(object sender, RoutedEventArgs e) => TogglePause();
@@ -582,6 +608,12 @@ public sealed partial class MainWindow : Window
                 break;
             case "channel" when int.TryParse(arg, out var delta):
                 StepChannel(delta);
+                break;
+            case "volume" when int.TryParse(arg, out var step):
+                SetVolume(_state.Volume + step);
+                break;
+            case "mute":
+                ToggleMute();
                 break;
         }
     }

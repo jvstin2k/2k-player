@@ -220,9 +220,11 @@
                             <FontIcon x:Name="PlayPauseIcon" Glyph="&#xE769;" FontSize="16" />
                         </Button>
                         <Button x:Name="SeekForwardButton" Click="OnSeekForward" Visibility="Collapsed" Content="+10 s" CornerRadius="16" ToolTipService.ToolTip="10 Sekunden vor (→)" />
-                        <Button Click="OnMute" Width="40" Height="40" CornerRadius="20" Padding="0" ToolTipService.ToolTip="Ton aus (M), Lautstärke per Mausrad über dem Bild">
+                        <Button Click="OnMute" Width="40" Height="40" CornerRadius="20" Padding="0" ToolTipService.ToolTip="Ton aus (M)">
                             <FontIcon x:Name="MuteIcon" Glyph="&#xE767;" FontSize="16" />
                         </Button>
+                        <Slider x:Name="VolumeSlider" Width="110" Minimum="0" Maximum="100" StepFrequency="1" VerticalAlignment="Center"
+                                ToolTipService.ToolTip="Lautstärke (auch Mausrad über dem Bild)" />
                         <Button Width="40" Height="40" CornerRadius="20" Padding="0" ToolTipService.ToolTip="Tonspur und Untertitel">
                             <FontIcon Glyph="&#xE7F0;" FontSize="16" />
                             <Button.Flyout>

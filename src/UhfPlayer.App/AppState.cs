@@ -11,7 +11,7 @@ internal static class AppPaths
     public static readonly string Cache = Directory.CreateDirectory(Path.Combine(Root, "cache")).FullName;
 }
 
-/// <summary>Per-user choices that outlive a session: favorites, hidden groups and resume positions.</summary>
+/// <summary>Per-user choices that outlive a session: favorites, hidden groups, resume positions and volume.</summary>
 internal sealed class AppState
 {
     private static readonly string FilePath = Path.Combine(AppPaths.Root, "state.json");
@@ -23,6 +23,9 @@ internal sealed class AppState
 
     /// <summary>Seconds into a movie or episode, keyed by channel id.</summary>
     public Dictionary<string, double> Resume { get; set; } = [];
+
+    /// <summary>0 to 100, as mpv's volume property.</summary>
+    public double Volume { get; set; } = 100;
 
     public static AppState Load()
     {

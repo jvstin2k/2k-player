@@ -27,10 +27,10 @@ In `%LOCALAPPDATA%\UhfPlayer` liegen `sources.json` (Quellen), `state.json` (Fav
 | Leertaste | Pause |
 | ↑ / ↓ | Vorheriger / nächster Sender |
 | ← / → | 10 s zurück / vor (Filme und Folgen) |
-| F, Doppelklick aufs Bild | Vollbild |
+| F, Doppelklick aufs Bild | Vollbild an/aus |
 | Esc | Vollbild verlassen |
 | M | Ton aus |
-| Mausrad über dem Bild | Lautstärke |
+| Mausrad über dem Bild, Regler neben dem Lautsprecher | Lautstärke (wird gespeichert) |
 | Stern in der Liste | Favorit |
 | Rechtsklick auf Kategorie | Kategorie ausblenden (wieder einblenden über das Zahnrad) |
 

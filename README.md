@@ -18,7 +18,21 @@ dotnet test tests/UhfPlayer.Core.Tests
 dotnet run --project src/UhfPlayer.App -p:Platform=x64
 ```
 
-Quellen werden in `%LOCALAPPDATA%\UhfPlayer\sources.json` gespeichert.
+In `%LOCALAPPDATA%\UhfPlayer` liegen `sources.json` (Quellen), `state.json` (Favoriten, ausgeblendete Gruppen, Weiterschauen), `cache\` (Senderlisten und EPG für den Schnellstart) und `mpv.log`.
+
+## Bedienung
+
+| Eingabe | Aktion |
+|---------|--------|
+| Leertaste | Pause |
+| ↑ / ↓ | Vorheriger / nächster Sender |
+| ← / → | 10 s zurück / vor (Filme und Folgen) |
+| F, Doppelklick aufs Bild | Vollbild |
+| Esc | Vollbild verlassen |
+| M | Ton aus |
+| Mausrad über dem Bild | Lautstärke |
+| Stern in der Liste | Favorit |
+| Rechtsklick auf Kategorie | Kategorie ausblenden (wieder einblenden über das Zahnrad) |
 
 ## Aufbau
 
@@ -31,6 +45,5 @@ Quellen werden in `%LOCALAPPDATA%\UhfPlayer\sources.json` gespeichert.
 
 ## Bewusst noch nicht drin
 
-- Steuerelemente über dem Video (UHF-Overlay): Das Video ist ein Win32-Child-Fenster, das XAML überdeckt. Nächster Schritt ist ein transparentes Overlay-Fenster.
-- Favoriten, EPG-Raster, Catch-up, EPG-Cache auf Platte.
+- Catch-up, zuletzt gesehener Sender beim Start.
 - Passwörter liegen im Klartext in `sources.json` (später Windows Credential Locker).

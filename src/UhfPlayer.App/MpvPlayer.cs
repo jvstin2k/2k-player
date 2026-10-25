@@ -1,11 +1,13 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 
 namespace UhfPlayer.App;
 
+public sealed record MpvTrack(string Type, string Id, string Label, bool Selected);
+
 /// <summary>
-/// libmpv rendering into a Win32 child window that sits on top of the XAML content.
-/// shortcut: a child HWND covers any XAML drawn over it (airspace), so controls live beside the video,
-/// not on it; switch to a transparent overlay window when UHF-style on-video controls are needed.
+/// libmpv rendering into a Win32 child window that sits on top of the XAML content. That window covers any XAML
+/// drawn over it, so in fullscreen MainWindow puts its controls into a separate overlay window.
 /// </summary>
 internal sealed partial class MpvPlayer : IDisposable
 {
@@ -17,6 +19,25 @@ internal sealed partial class MpvPlayer : IDisposable
 
     /// <summary>Raised on the mpv event thread when a stream cannot be opened or breaks off.</summary>
     public event Action<string>? PlaybackFailed;
+
+    /// <summary>Raised on the mpv event thread for "script-message uhf &lt;name&gt; [arg]" bindings in InputConf.</summary>
+    public event Action<string, string?>? MessageReceived;
+
+    // Keys and mouse over the video go to mpv's window, not to XAML. These bindings handle them in mpv
+    // and forward what only the app can do (fullscreen, switching channels) as client messages.
+    private const string InputConf = """
+        SPACE cycle pause
+        m cycle mute
+        LEFT seek -10
+        RIGHT seek 10
+        WHEEL_UP add volume 5
+        WHEEL_DOWN add volume -5
+        MBTN_LEFT_DBL script-message uhf fullscreen
+        f script-message uhf fullscreen
+        ESC script-message uhf exit-fullscreen
+        UP script-message uhf channel -1
+        DOWN script-message uhf channel 1
+        """;
 
     public MpvPlayer(nint parentHwnd)
     {
@@ -33,15 +54,17 @@ internal sealed partial class MpvPlayer : IDisposable
         Option("hwdec", "auto-safe");
         Option("osc", "no");
         Option("input-default-bindings", "no");
-        Option("input-vo-keyboard", "no");
+        Option("input-vo-keyboard", "yes");
         Option("ytdl", "no");
         Option("network-timeout", "10");
         // Faster channel switching: probe less before the first frame and do not wait to fill the cache.
         Option("demuxer-lavf-analyzeduration", "1");
         Option("cache-pause-initial", "no");
         Option("demuxer-max-bytes", "64MiB");
-        var logDir = Directory.CreateDirectory(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UhfPlayer"));
-        Option("log-file", Path.Combine(logDir.FullName, "mpv.log"));
+        Option("log-file", Path.Combine(AppPaths.Root, "mpv.log"));
+        var inputConf = Path.Combine(AppPaths.Root, "input.conf");
+        File.WriteAllText(inputConf, InputConf);
+        Option("input-conf", inputConf);
         Check(mpv_initialize(_ctx));
 
         _events = new Thread(EventLoop) { IsBackground = true, Name = "mpv events" };
@@ -62,11 +85,22 @@ internal sealed partial class MpvPlayer : IDisposable
                 if (end->Reason == MPV_END_FILE_REASON_ERROR)
                     PlaybackFailed?.Invoke(Marshal.PtrToStringUTF8(mpv_error_string(end->Error)) ?? "unknown error");
             }
+            else if (ev->EventId == MPV_EVENT_CLIENT_MESSAGE && ev->Data != 0)
+            {
+                var msg = (MpvEventClientMessage*)ev->Data;
+                var args = new string?[msg->NumArgs];
+                for (var i = 0; i < args.Length; i++)
+                    args[i] = Marshal.PtrToStringUTF8(msg->Args[i]);
+                if (args is ["uhf", { } name, ..])
+                    MessageReceived?.Invoke(name, args.Length > 2 ? args[2] : null);
+            }
         }
     }
 
-    public void Play(string url, string? userAgent, string? referrer)
+    /// <param name="startSeconds">Resume position for movies and episodes; 0 starts from the beginning.</param>
+    public void Play(string url, string? userAgent, string? referrer, double startSeconds = 0)
     {
+        Check(mpv_set_property_string(_ctx, "start", startSeconds > 0 ? startSeconds.ToString(CultureInfo.InvariantCulture) : "none"));
         Check(mpv_set_property_string(_ctx, "user-agent", userAgent ?? Core.SourceLoader.DefaultUserAgent));
         Check(mpv_set_property_string(_ctx, "referrer", referrer ?? ""));
         Check(mpv_set_property_string(_ctx, "pause", "no"));
@@ -79,6 +113,47 @@ internal sealed partial class MpvPlayer : IDisposable
     public void Seek(int seconds) => Command("seek", seconds.ToString(), "relative");
 
     public void ToggleMute() => Command("cycle", "mute");
+
+    public void SetVisible(bool visible) => ShowWindow(_hwnd, visible ? SW_SHOW : SW_HIDE);
+
+    public void SetProperty(string name, string value) => Check(mpv_set_property_string(_ctx, name, value));
+
+    public string? GetProperty(string name)
+    {
+        var p = mpv_get_property_string(_ctx, name);
+        if (p == 0)
+            return null;
+        try
+        {
+            return Marshal.PtrToStringUTF8(p);
+        }
+        finally
+        {
+            mpv_free(p);
+        }
+    }
+
+    public double? GetDouble(string name)
+        => double.TryParse(GetProperty(name), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : null;
+
+    public IReadOnlyList<MpvTrack> Tracks()
+    {
+        var tracks = new List<MpvTrack>();
+        var count = int.TryParse(GetProperty("track-list/count"), out var n) ? n : 0;
+        for (var i = 0; i < count; i++)
+        {
+            var p = $"track-list/{i}";
+            var lang = GetProperty($"{p}/lang");
+            var title = GetProperty($"{p}/title");
+            var label = string.Join(" · ", new[] { lang?.ToUpperInvariant(), title }.Where(s => !string.IsNullOrEmpty(s)));
+            tracks.Add(new MpvTrack(
+                GetProperty($"{p}/type") ?? "",
+                GetProperty($"{p}/id") ?? "",
+                label.Length > 0 ? label : $"Spur {GetProperty($"{p}/id")}",
+                GetProperty($"{p}/selected") == "yes"));
+        }
+        return tracks;
+    }
 
     /// <summary>Places the video window over the given client-area rectangle, in physical pixels.</summary>
     public void SetBounds(int x, int y, int width, int height)
@@ -124,8 +199,17 @@ internal sealed partial class MpvPlayer : IDisposable
     [LibraryImport(Mpv)] private static partial nint mpv_error_string(int error);
     [LibraryImport(Mpv)] private static partial nint mpv_wait_event(nint ctx, double timeout);
     [LibraryImport(Mpv)] private static partial void mpv_wakeup(nint ctx);
+    [LibraryImport(Mpv)] private static partial void mpv_free(nint data);
+    [LibraryImport(Mpv, StringMarshalling = StringMarshalling.Utf8)] private static partial nint mpv_get_property_string(nint ctx, string name);
 
-    private const int MPV_EVENT_SHUTDOWN = 1, MPV_EVENT_END_FILE = 7, MPV_END_FILE_REASON_ERROR = 4;
+    private const int MPV_EVENT_SHUTDOWN = 1, MPV_EVENT_END_FILE = 7, MPV_EVENT_CLIENT_MESSAGE = 16, MPV_END_FILE_REASON_ERROR = 4;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private unsafe struct MpvEventClientMessage
+    {
+        public int NumArgs;
+        public nint* Args;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct MpvEvent
@@ -147,7 +231,7 @@ internal sealed partial class MpvPlayer : IDisposable
     [LibraryImport(Mpv, StringMarshalling = StringMarshalling.Utf8)] private static partial int mpv_set_property_string(nint ctx, string name, string data);
 
     private const uint WS_CHILD = 0x40000000, WS_CLIPSIBLINGS = 0x04000000, SWP_NOACTIVATE = 0x0010;
-    private const int SW_SHOW = 5;
+    private const int SW_SHOW = 5, SW_HIDE = 0;
     private static readonly nint HWND_TOP = 0;
 
     [LibraryImport("user32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]

@@ -21,6 +21,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # release notes list the commits of the merged pull request
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -57,11 +59,30 @@ jobs:
           vpk download github --repoUrl $env:RELEASES_REPO --token $env:RELEASES_TOKEN
           exit 0
 
+      - name: Release notes
+        shell: pwsh
+        run: |
+          # A merge commit lists the pull request's commits; a direct push lists just that commit.
+          git rev-parse -q --verify HEAD^2 *> $null
+          $range = if ($LASTEXITCODE -eq 0) { 'HEAD^1..HEAD^2' } else { 'HEAD~1..HEAD' }
+          $changes = git log --no-merges --format='- %s' $range
+          @(
+            'Windows IPTV player for M3U playlists, Xtream Codes and XMLTV EPG.'
+            ''
+            '**New here?** Download `2k-Player-win-Setup.exe` below and run it. If Windows shows "Windows protected your PC", click *More info → Run anyway*.'
+            ''
+            '**Already installed?** Click *Update … installieren* at the bottom left of the player. Your sources, logins and settings are kept.'
+            ''
+            '### Changes'
+            $changes
+          ) | Set-Content release-notes.md -Encoding utf8
+          Get-Content release-notes.md
+
       - name: Pack
         shell: pwsh
         run: |
           # packId differs from the data folder %LOCALAPPDATA%\UhfPlayer, which an uninstall must not delete.
-          vpk pack --packId 2k-Player --packVersion "1.0.${{ github.run_number }}" --packDir publish --mainExe UhfPlayer.App.exe --packTitle "2k-Player" --icon src/UhfPlayer.App/Assets/AppIcon.ico
+          vpk pack --packId 2k-Player --packVersion "1.0.${{ github.run_number }}" --packDir publish --mainExe UhfPlayer.App.exe --packTitle "2k-Player" --icon src/UhfPlayer.App/Assets/AppIcon.ico --releaseNotes release-notes.md
           if ($LASTEXITCODE) { throw "vpk pack failed" }
 
       - name: Upload release
@@ -80,3 +101,19 @@ jobs:
         with:
           name: 2k-Player-Setup
           path: Releases/*Setup.exe
+
+      - name: Update the release repo's page
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        env:
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          # The public page comes from docs/releases-repo, so it is edited here together with the code.
+          $url = $env:RELEASES_REPO -replace '^https://', "https://x-access-token:$($env:RELEASES_TOKEN)@"
+          git clone --depth 1 $url releases-page
+          Copy-Item docs/releases-repo/* releases-page/ -Force
+          Set-Location releases-page
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if (git status --porcelain) { git commit -m 'Update project page'; git push }

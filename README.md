@@ -36,6 +36,8 @@ Jeder Merge nach `main` baut per GitHub Actions einen Installer und veröffentli
 - **Updates:** Gibt es eine neue Version, erscheint links unten „Update … installieren“. Ein Klick lädt sie und startet neu. Quellen, Zugangsdaten und Einstellungen bleiben erhalten.
 - **Deinstallieren:** Windows-Einstellungen → Apps → 2k-Player.
 
+Die englische Startseite des Release-Repos kommt aus `docs/releases-repo/` und wird bei jedem Release mit hochgeladen. Die Release-Notes listen die Commits des gemergten PRs.
+
 Einmalige Einrichtung im GitHub-Konto:
 
 1. Öffentliches Repo `2k-player-releases` anlegen, mit README (Releases brauchen einen ersten Commit).

@@ -33,7 +33,7 @@ Zugangsdaten (Passwörter, Playlist- und EPG-URLs) liegen in der Windows-Anmelde
 Jeder Merge nach `main` baut per GitHub Actions einen Installer und veröffentlicht ihn als Release im öffentlichen Repo [uhf-player-releases](https://github.com/jvstin2k/uhf-player-releases). Der Code bleibt privat.
 
 - **Installieren:** `2k-Player-win-Setup.exe` aus dem neuesten Release laden und starten. Windows zeigt beim ersten Mal „Der Computer wurde durch Windows geschützt“, weil der Installer nicht signiert ist: „Weitere Informationen“ → „Trotzdem ausführen“.
-- **Updates:** Beim Start lädt die App neue Versionen im Hintergrund und installiert sie beim nächsten Start, oder sofort über „Jetzt neu starten“.
+- **Updates:** Gibt es eine neue Version, erscheint links unten „Update … installieren“. Ein Klick lädt sie und startet neu. Quellen, Zugangsdaten und Einstellungen bleiben erhalten.
 - **Deinstallieren:** Windows-Einstellungen → Apps → 2k-Player.
 
 Einmalige Einrichtung im GitHub-Konto:

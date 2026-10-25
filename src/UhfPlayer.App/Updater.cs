@@ -5,28 +5,27 @@ namespace UhfPlayer.App;
 
 /// <summary>
 /// Self-update from the public release repo, which the GitHub Actions workflow fills on every merge to main.
+/// Nothing installs without a click: CheckAsync only looks, InstallAsync downloads and restarts.
 /// Only installs made with Setup.exe update themselves; dotnet run and scripts/install.ps1 builds skip it.
+/// User data is safe across updates: it lives in %LOCALAPPDATA%\UhfPlayer and the Credential Locker,
+/// not in the install folder that Velopack replaces.
 /// </summary>
 internal sealed class Updater
 {
     private const string ReleasesRepo = "https://github.com/jvstin2k/uhf-player-releases";
 
     private readonly UpdateManager _manager = new(new GithubSource(ReleasesRepo, null, false));
-    private UpdateInfo? _pending;
+    private UpdateInfo? _available;
 
-    /// <summary>Downloads a newer version if there is one and returns its version, or null.</summary>
-    public async Task<string?> DownloadAsync()
+    /// <summary>The newer version's number, or null when up to date, offline or not installed.</summary>
+    public async Task<string?> CheckAsync()
     {
         if (!_manager.IsInstalled)
             return null;
         try
         {
-            var update = await _manager.CheckForUpdatesAsync();
-            if (update is null)
-                return null;
-            await _manager.DownloadUpdatesAsync(update);
-            _pending = update;
-            return update.TargetFullRelease.Version.ToString();
+            _available = await _manager.CheckForUpdatesAsync();
+            return _available?.TargetFullRelease.Version.ToString();
         }
         catch (Exception ex)
         {
@@ -35,16 +34,21 @@ internal sealed class Updater
         }
     }
 
-    public void RestartNow()
+    /// <summary>Downloads the update found by CheckAsync and restarts into it; false if that failed.</summary>
+    public async Task<bool> InstallAsync()
     {
-        if (_pending is not null)
-            _manager.ApplyUpdatesAndRestart(_pending);
-    }
-
-    /// <summary>Installs a downloaded update after the app has closed, without a window.</summary>
-    public void ApplyOnExit()
-    {
-        if (_pending is not null)
-            _manager.WaitExitThenApplyUpdates(_pending, silent: true, restart: false);
+        if (_available is null)
+            return false;
+        try
+        {
+            await _manager.DownloadUpdatesAsync(_available);
+            _manager.ApplyUpdatesAndRestart(_available);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            CrashLog.Write(ex);
+            return false;
+        }
     }
 }

@@ -132,7 +132,6 @@ public sealed partial class MainWindow : Window
         {
             SaveResume();
             _state.Save();
-            _updater.ApplyOnExit();
             _idleTimer.Stop();
             _player?.Dispose();
         };
@@ -144,18 +143,26 @@ public sealed partial class MainWindow : Window
     private async Task StartAsync()
     {
         await ReloadAsync();
-        // After loading, so the update note is not replaced by the loading status.
-        if (await _updater.DownloadAsync() is { } version)
+        // Only offered; installing waits for a click on the button.
+        if (await _updater.CheckAsync() is { } version)
         {
-            ShowStatus(InfoBarSeverity.Success, $"Update {version} ist geladen und wird beim nächsten Start installiert.");
-            var restart = new Button { Content = "Jetzt neu starten" };
-            restart.Click += (_, _) =>
-            {
-                SaveResume();
-                _state.Save();
-                _updater.RestartNow();
-            };
-            StatusBar.ActionButton = restart;
+            UpdateText.Text = $"Update {version} installieren";
+            UpdateButton.Visibility = Visibility.Visible;
+        }
+    }
+
+    private async void OnUpdate(object sender, RoutedEventArgs e)
+    {
+        UpdateButton.IsEnabled = false;
+        UpdateText.Text = "Update wird geladen …";
+        SaveResume();
+        _state.Save();
+        // Restarts the app when done. Sources, favorites and credentials live outside the install folder.
+        if (!await _updater.InstallAsync())
+        {
+            ShowStatus(InfoBarSeverity.Error, "Update konnte nicht geladen werden. Bitte später erneut versuchen.");
+            UpdateText.Text = "Update erneut versuchen";
+            UpdateButton.IsEnabled = true;
         }
     }
 
@@ -1036,7 +1043,6 @@ public sealed partial class MainWindow : Window
     {
         StatusBar.Severity = severity;
         StatusBar.Message = message;
-        StatusBar.ActionButton = null;
         StatusBar.IsOpen = _mode == ViewMode.Normal;
     }
 }

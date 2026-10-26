@@ -10,6 +10,29 @@
     </Window.SystemBackdrop>
 
     <Grid x:Name="Root" PreviewKeyDown="OnPreviewKeyDown">
+        <Grid.Resources>
+            <!-- Movie and series cards on the home page -->
+            <DataTemplate x:Key="PosterTemplate" x:DataType="local:ChannelRow">
+                <StackPanel Width="150" Spacing="6">
+                    <StackPanel.ContextFlyout>
+                        <MenuFlyout>
+                            <MenuFlyoutItem Text="{x:Bind local:Strings.RemoveFavorite}" Tag="{x:Bind}" Click="OnRemoveFavorite">
+                                <MenuFlyoutItem.Icon>
+                                    <FontIcon Glyph="&#xE735;" />
+                                </MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                        </MenuFlyout>
+                    </StackPanel.ContextFlyout>
+                    <Border Height="225" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                        <Image Source="{x:Bind Poster}" Stretch="UniformToFill" />
+                    </Border>
+                    <TextBlock Text="{x:Bind Channel.Name}" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{x:Bind Subtitle}" Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </DataTemplate>
+        </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition x:Name="TitleBarRow" Height="44" />
             <RowDefinition Height="*" />
@@ -44,36 +67,47 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <AutoSuggestBox x:Name="SearchBox" PlaceholderText="Sender oder Sendung suchen" QueryIcon="Find" TextChanged="OnSearchChanged" />
+                <StackPanel Spacing="8">
+                    <!-- Shown only with more than one source, see RefreshSourcePicker -->
+                    <ComboBox x:Name="SourcePicker" HorizontalAlignment="Stretch" Visibility="Collapsed" SelectionChanged="OnSourcePicked"
+                              ToolTipService.ToolTip="{x:Bind local:Strings.SourcePickerTip}" />
+                    <AutoSuggestBox x:Name="SearchBox" PlaceholderText="{x:Bind local:Strings.SearchPlaceholder}" QueryIcon="Find" TextChanged="OnSearchChanged" />
+                </StackPanel>
 
                 <ListView x:Name="SectionList" Grid.Row="1" SelectionChanged="OnSectionChanged">
                     <ListViewItem>
                         <StackPanel Orientation="Horizontal" Spacing="14">
+                            <FontIcon Glyph="&#xE80F;" FontSize="16" />
+                            <TextBlock Text="{x:Bind local:Strings.Home}" />
+                        </StackPanel>
+                    </ListViewItem>
+                    <ListViewItem>
+                        <StackPanel Orientation="Horizontal" Spacing="14">
                             <FontIcon Glyph="&#xE7F4;" FontSize="16" />
-                            <TextBlock Text="Live TV" />
+                            <TextBlock Text="{x:Bind local:Strings.LiveTv}" />
                         </StackPanel>
                     </ListViewItem>
                     <ListViewItem>
                         <StackPanel Orientation="Horizontal" Spacing="14">
                             <FontIcon Glyph="&#xE8B2;" FontSize="16" />
-                            <TextBlock Text="Filme" />
+                            <TextBlock Text="{x:Bind local:Strings.Movies}" />
                         </StackPanel>
                     </ListViewItem>
                     <ListViewItem>
                         <StackPanel Orientation="Horizontal" Spacing="14">
                             <FontIcon Glyph="&#xE8F1;" FontSize="16" />
-                            <TextBlock Text="Serien" />
+                            <TextBlock Text="{x:Bind local:Strings.Series}" />
                         </StackPanel>
                     </ListViewItem>
                     <ListViewItem>
                         <StackPanel Orientation="Horizontal" Spacing="14">
                             <FontIcon Glyph="&#xE787;" FontSize="16" />
-                            <TextBlock Text="TV-Guide" />
+                            <TextBlock Text="{x:Bind local:Strings.Guide}" />
                         </StackPanel>
                     </ListViewItem>
                 </ListView>
 
-                <TextBlock Grid.Row="2" Text="KATEGORIEN" Margin="14,10,0,0"
+                <TextBlock x:Name="CategoriesHeader" Grid.Row="2" Text="{x:Bind local:Strings.Categories}" Margin="14,10,0,0"
                            Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
 
@@ -83,7 +117,7 @@
                             <TextBlock Text="{x:Bind}" TextTrimming="CharacterEllipsis">
                                 <TextBlock.ContextFlyout>
                                     <MenuFlyout>
-                                        <MenuFlyoutItem Text="Gruppe ausblenden" Tag="{x:Bind}" Click="OnHideGroup">
+                                        <MenuFlyoutItem Text="{x:Bind local:Strings.HideGroup}" Tag="{x:Bind}" Click="OnHideGroup">
                                             <MenuFlyoutItem.Icon>
                                                 <FontIcon Glyph="&#xED1A;" />
                                             </MenuFlyoutItem.Icon>
@@ -106,7 +140,7 @@
                     </Grid.RowDefinitions>
                     <!-- Shown only when a newer version is available, see StartAsync -->
                     <Button x:Name="UpdateButton" Grid.ColumnSpan="2" HorizontalAlignment="Stretch" Visibility="Collapsed" Click="OnUpdate"
-                            ToolTipService.ToolTip="Quellen, Favoriten und Einstellungen bleiben erhalten">
+                            ToolTipService.ToolTip="{x:Bind local:Strings.UpdateKeepsTip}">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="&#xE896;" FontSize="14" />
                             <TextBlock x:Name="UpdateText" />
@@ -115,10 +149,10 @@
                     <Button Grid.Row="1" HorizontalAlignment="Stretch" Style="{StaticResource AccentButtonStyle}" Click="OnAddSource">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="&#xE710;" FontSize="14" />
-                            <TextBlock Text="Quelle hinzufügen" />
+                            <TextBlock Text="{x:Bind local:Strings.AddSource}" />
                         </StackPanel>
                     </Button>
-                    <Button Grid.Row="1" Grid.Column="1" Click="OnManageSources" ToolTipService.ToolTip="Quellen und ausgeblendete Gruppen">
+                    <Button Grid.Row="1" Grid.Column="1" Click="OnOpenSettings" ToolTipService.ToolTip="{x:Bind local:Strings.Settings}">
                         <FontIcon Glyph="&#xE713;" FontSize="14" />
                     </Button>
                 </Grid>
@@ -165,7 +199,7 @@
                                     <ProgressBar Value="{x:Bind Progress}" Maximum="1" Visibility="{x:Bind ProgressVisibility}" Margin="0,3,0,0" />
                                 </StackPanel>
                                 <Button Grid.Column="2" Click="OnToggleFavorite" Background="Transparent" BorderThickness="0" Padding="8"
-                                        ToolTipService.ToolTip="Favorit">
+                                        ToolTipService.ToolTip="{x:Bind local:Strings.Favorite}">
                                     <FontIcon Glyph="{x:Bind StarGlyph, Mode=OneWay}" FontSize="14"
                                               Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                                 </Button>
@@ -185,7 +219,7 @@
                         SizeChanged="OnVideoHostSizeChanged" DoubleTapped="OnVideoDoubleTapped">
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" Opacity="0.55">
                         <FontIcon Glyph="&#xE714;" FontSize="44" Foreground="White" />
-                        <TextBlock Text="Wähle einen Sender, Film oder eine Folge" Foreground="White" />
+                        <TextBlock Text="{x:Bind local:Strings.PickSomething}" Foreground="White" />
                     </StackPanel>
                 </Border>
 
@@ -202,7 +236,7 @@
                         <Image x:Name="NowLogo" Stretch="Uniform" Margin="6" />
                     </Border>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                        <TextBlock x:Name="NowChannel" Text="Nichts ausgewählt" Style="{StaticResource BodyStrongTextBlockStyle}" FontSize="16"
+                        <TextBlock x:Name="NowChannel" Text="{x:Bind local:Strings.NothingSelected}" Style="{StaticResource BodyStrongTextBlockStyle}" FontSize="16"
                                    TextTrimming="CharacterEllipsis" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock x:Name="NowTime" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
@@ -214,7 +248,7 @@
                     </StackPanel>
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                         <Button x:Name="LiveButton" Click="OnLive" Visibility="Collapsed" CornerRadius="16" Padding="14,6"
-                                Background="#E5484D" Foreground="White" BorderThickness="0" ToolTipService.ToolTip="Sender neu synchronisieren">
+                                Background="#E5484D" Foreground="White" BorderThickness="0" ToolTipService.ToolTip="{x:Bind local:Strings.LiveTip}">
                             <Button.Resources>
                                 <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#D13438" />
                                 <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#B32A2E" />
@@ -226,38 +260,105 @@
                                 <TextBlock Text="LIVE" FontWeight="Bold" />
                             </StackPanel>
                         </Button>
-                        <Button x:Name="SeekBackButton" Click="OnSeekBack" Visibility="Collapsed" Content="−10 s" CornerRadius="16" ToolTipService.ToolTip="10 Sekunden zurück (←)" />
+                        <Button x:Name="SeekBackButton" Click="OnSeekBack" Visibility="Collapsed" Content="−10 s" CornerRadius="16" ToolTipService.ToolTip="{x:Bind local:Strings.SeekBackTip}" />
                         <Button Click="OnPause" Width="44" Height="44" CornerRadius="22" Padding="0" Style="{StaticResource AccentButtonStyle}"
-                                ToolTipService.ToolTip="Pause (Leertaste)">
+                                ToolTipService.ToolTip="{x:Bind local:Strings.PauseTip}">
                             <FontIcon x:Name="PlayPauseIcon" Glyph="&#xE769;" FontSize="16" />
                         </Button>
-                        <Button x:Name="SeekForwardButton" Click="OnSeekForward" Visibility="Collapsed" Content="+10 s" CornerRadius="16" ToolTipService.ToolTip="10 Sekunden vor (→)" />
-                        <Button Click="OnMute" Width="40" Height="40" CornerRadius="20" Padding="0" ToolTipService.ToolTip="Ton aus (M)">
+                        <Button x:Name="SeekForwardButton" Click="OnSeekForward" Visibility="Collapsed" Content="+10 s" CornerRadius="16" ToolTipService.ToolTip="{x:Bind local:Strings.SeekForwardTip}" />
+                        <Button Click="OnMute" Width="40" Height="40" CornerRadius="20" Padding="0" ToolTipService.ToolTip="{x:Bind local:Strings.MuteTip}">
                             <FontIcon x:Name="MuteIcon" Glyph="&#xE767;" FontSize="16" />
                         </Button>
                         <Slider x:Name="VolumeSlider" Width="110" Minimum="0" Maximum="100" StepFrequency="1" VerticalAlignment="Center"
-                                ToolTipService.ToolTip="Lautstärke (auch Mausrad über dem Bild)" />
-                        <Button Width="40" Height="40" CornerRadius="20" Padding="0" ToolTipService.ToolTip="Ton, Untertitel, Bildformat und Stream-Info">
+                                ToolTipService.ToolTip="{x:Bind local:Strings.VolumeTip}" />
+                        <Button Width="40" Height="40" CornerRadius="20" Padding="0" ToolTipService.ToolTip="{x:Bind local:Strings.TracksTip}">
                             <FontIcon Glyph="&#xE7F0;" FontSize="16" />
                             <Button.Flyout>
                                 <MenuFlyout x:Name="TracksFlyout" Opening="OnTracksOpening" />
                             </Button.Flyout>
                         </Button>
-                        <Button Click="OnMini" Width="40" Height="40" CornerRadius="20" Padding="0" ToolTipService.ToolTip="Mini-Player, immer im Vordergrund (P)">
+                        <Button Click="OnMini" Width="40" Height="40" CornerRadius="20" Padding="0" ToolTipService.ToolTip="{x:Bind local:Strings.MiniTip}">
                             <FontIcon Glyph="&#xE8A7;" FontSize="16" />
                         </Button>
-                        <Button Click="OnFullScreen" Width="40" Height="40" CornerRadius="20" Padding="0" ToolTipService.ToolTip="Vollbild (F, Doppelklick)">
+                        <Button Click="OnFullScreen" Width="40" Height="40" CornerRadius="20" Padding="0" ToolTipService.ToolTip="{x:Bind local:Strings.FullScreenTip}">
                             <FontIcon x:Name="FullScreenIcon" Glyph="&#xE740;" FontSize="16" />
                         </Button>
                     </StackPanel>
                 </Grid>
             </Grid>
 
+            <!-- Home: favorite channels, movies and series; replaces list and player while Home is selected -->
+            <ScrollViewer x:Name="HomePanel" Grid.Column="1" Grid.ColumnSpan="2" Grid.Row="1" Margin="0,0,12,12" Visibility="Collapsed">
+                <StackPanel Spacing="8" Padding="8,4,8,24">
+                    <Grid ColumnSpacing="12" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{x:Bind local:Strings.Home}" Style="{StaticResource TitleTextBlockStyle}" />
+                        <!-- Playback goes on in the background; this leads back to the player -->
+                        <Button x:Name="NowPlayingButton" Grid.Column="1" Visibility="Collapsed" Click="OnBackToPlayer" CornerRadius="16">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE768;" FontSize="14" />
+                                <TextBlock x:Name="NowPlayingText" TextTrimming="CharacterEllipsis" MaxWidth="320" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <TextBlock x:Name="HomeEmpty" Visibility="Collapsed" TextWrapping="Wrap" Margin="0,24,0,0"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Text="{x:Bind local:Strings.HomeEmpty}" />
+
+                    <TextBlock x:Name="HomeLiveHeader" Text="{x:Bind local:Strings.Channels}" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,8,0,0" />
+                    <GridView x:Name="HomeLive" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnHomeItemClick"
+                              ScrollViewer.VerticalScrollMode="Disabled">
+                        <GridView.ItemTemplate>
+                            <DataTemplate x:DataType="local:ChannelRow">
+                                <StackPanel Width="200" Padding="12" Spacing="6" CornerRadius="12"
+                                            Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                    <StackPanel.ContextFlyout>
+                                        <MenuFlyout>
+                                            <MenuFlyoutItem Text="{x:Bind local:Strings.RemoveFavorite}" Tag="{x:Bind}" Click="OnRemoveFavorite">
+                                                <MenuFlyoutItem.Icon>
+                                                    <FontIcon Glyph="&#xE735;" />
+                                                </MenuFlyoutItem.Icon>
+                                            </MenuFlyoutItem>
+                                        </MenuFlyout>
+                                    </StackPanel.ContextFlyout>
+                                    <Border Height="100" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                        <Image Source="{x:Bind Logo}" Stretch="Uniform" Margin="14" />
+                                    </Border>
+                                    <TextBlock Text="{x:Bind Channel.Name}" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{x:Bind Subtitle}" Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                                    <ProgressBar Value="{x:Bind Progress}" Maximum="1" Visibility="{x:Bind ProgressVisibility}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </GridView.ItemTemplate>
+                    </GridView>
+
+                    <TextBlock x:Name="HomeMoviesHeader" Text="{x:Bind local:Strings.Movies}" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,16,0,0" />
+                    <GridView x:Name="HomeMovies" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnHomeItemClick"
+                              ScrollViewer.VerticalScrollMode="Disabled" ItemTemplate="{StaticResource PosterTemplate}" />
+
+                    <TextBlock x:Name="HomeSeriesHeader" Text="{x:Bind local:Strings.Series}" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,16,0,0" />
+                    <GridView x:Name="HomeSeries" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnHomeItemClick"
+                              ScrollViewer.VerticalScrollMode="Disabled" ItemTemplate="{StaticResource PosterTemplate}" />
+                </StackPanel>
+            </ScrollViewer>
+
             <!-- TV guide: replaces list and player while the TV-Guide section is selected -->
             <Grid x:Name="GuidePanel" Grid.Column="1" Grid.ColumnSpan="2" Grid.Row="1" Margin="0,0,12,12" CornerRadius="12" Visibility="Collapsed"
                   Background="{ThemeResource LayerFillColorDefaultBrush}"
                   BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                <ScrollViewer HorizontalScrollMode="Enabled" HorizontalScrollBarVisibility="Auto"
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <!-- Says why the guide is empty: no EPG, a broken link, no matching channels, outdated data -->
+                <InfoBar x:Name="GuideInfo" Margin="12,12,12,0" IsClosable="False" />
+                <ScrollViewer Grid.Row="1" HorizontalScrollMode="Enabled" HorizontalScrollBarVisibility="Auto"
                               VerticalScrollMode="Disabled" VerticalScrollBarVisibility="Disabled">
                     <Grid x:Name="GuideContent" HorizontalAlignment="Left">
                         <Grid.RowDefinitions>
@@ -323,6 +424,63 @@
                         <Rectangle x:Name="NowLine" Grid.RowSpan="2" Width="2" HorizontalAlignment="Left" IsHitTestVisible="False"
                                    Fill="{ThemeResource AccentFillColorDefaultBrush}" />
                     </Grid>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+
+        <!-- Settings: replaces the main view while open, see MainWindow.Settings.cs -->
+        <Grid x:Name="SettingsPanel" Grid.Row="1" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="248" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Padding="12,4,8,12" Spacing="8">
+                <Button Click="OnCloseSettings" Background="Transparent" BorderThickness="0" Padding="10,6"
+                        ToolTipService.ToolTip="{x:Bind local:Strings.BackEsc}">
+                    <StackPanel Orientation="Horizontal" Spacing="14">
+                        <FontIcon Glyph="&#xE72B;" FontSize="16" />
+                        <TextBlock Text="{x:Bind local:Strings.Settings}" Style="{StaticResource SubtitleTextBlockStyle}" />
+                    </StackPanel>
+                </Button>
+                <!-- Same order as MainWindow.SettingsCategory -->
+                <ListView x:Name="SettingsNav" SelectionChanged="OnSettingsCategoryChanged">
+                    <ListViewItem>
+                        <StackPanel Orientation="Horizontal" Spacing="14">
+                            <FontIcon Glyph="&#xE713;" FontSize="16" />
+                            <TextBlock Text="{x:Bind local:Strings.General}" />
+                        </StackPanel>
+                    </ListViewItem>
+                    <ListViewItem>
+                        <StackPanel Orientation="Horizontal" Spacing="14">
+                            <FontIcon Glyph="&#xE774;" FontSize="16" />
+                            <TextBlock Text="{x:Bind local:Strings.Sources}" />
+                        </StackPanel>
+                    </ListViewItem>
+                    <ListViewItem>
+                        <StackPanel Orientation="Horizontal" Spacing="14">
+                            <FontIcon Glyph="&#xED1A;" FontSize="16" />
+                            <TextBlock Text="{x:Bind local:Strings.HiddenChannels}" />
+                        </StackPanel>
+                    </ListViewItem>
+                    <ListViewItem>
+                        <StackPanel Orientation="Horizontal" Spacing="14">
+                            <FontIcon Glyph="&#xE946;" FontSize="16" />
+                            <TextBlock Text="{x:Bind local:Strings.About}" />
+                        </StackPanel>
+                    </ListViewItem>
+                </ListView>
+            </StackPanel>
+
+            <Grid Grid.Column="1" Margin="0,0,12,12" CornerRadius="12"
+                  Background="{ThemeResource LayerFillColorDefaultBrush}"
+                  BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <ScrollViewer x:Name="SettingsScroller">
+                    <StackPanel MaxWidth="860" Padding="32,24,32,32" Spacing="8">
+                        <TextBlock x:Name="SettingsTitle" Style="{StaticResource TitleTextBlockStyle}" Margin="0,0,0,12" />
+                        <!-- Filled per category by ShowSettingsCategory -->
+                        <StackPanel x:Name="SettingsContent" Spacing="8" />
+                    </StackPanel>
                 </ScrollViewer>
             </Grid>
         </Grid>

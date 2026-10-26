@@ -46,7 +46,18 @@ internal static class CrashLog
     }
 }
 
-/// <summary>Per-user choices that outlive a session: favorites, hidden groups, resume positions, watched titles and volume.</summary>
+/// <summary>Writes a file so it holds either the old or the new content, never an empty or half-written one.</summary>
+internal static class AtomicFile
+{
+    public static void WriteAllText(string path, string contents)
+    {
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, contents);
+        File.Move(temp, path, overwrite: true);
+    }
+}
+
+/// <summary>Per-user choices that outlive a session: favorites, hidden groups, resume positions, watched titles, volume, the source in use and the language.</summary>
 internal sealed class AppState
 {
     private static readonly string FilePath = Path.Combine(AppPaths.Root, "state.json");
@@ -65,6 +76,12 @@ internal sealed class AppState
     /// <summary>0 to 100, as mpv's volume property.</summary>
     public double Volume { get; set; } = 100;
 
+    /// <summary>The source last chosen, preselected when the app asks which one to use.</summary>
+    public Guid? ActiveSource { get; set; }
+
+    /// <summary>"en" or "de", see Strings.</summary>
+    public string Language { get; set; } = Strings.English;
+
     public static AppState Load()
     {
         try
@@ -77,7 +94,7 @@ internal sealed class AppState
         }
     }
 
-    public void Save() => File.WriteAllText(FilePath, JsonSerializer.Serialize(this));
+    public void Save() => AtomicFile.WriteAllText(FilePath, JsonSerializer.Serialize(this));
 }
 
 /// <summary>Last known channel lists and XMLTV files per source, so the app is usable before the provider answers.</summary>
@@ -102,13 +119,16 @@ internal static class ChannelCache
 
     public static void Save(Guid sourceId, PlaylistResult playlist)
     {
-        using var stream = File.Create(ChannelsPath(sourceId));
-        JsonSerializer.Serialize(stream, playlist);
+        var path = ChannelsPath(sourceId);
+        using (var stream = File.Create(path + ".tmp"))
+            JsonSerializer.Serialize(stream, playlist);
+        File.Move(path + ".tmp", path, overwrite: true);
     }
 
     public static void Delete(Guid sourceId)
     {
         File.Delete(ChannelsPath(sourceId));
         File.Delete(EpgPath(sourceId));
+        File.Delete(EpgPath(sourceId) + ".url");
     }
 }

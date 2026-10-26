@@ -18,6 +18,7 @@ public sealed partial class MainWindow : Window
 {
     private enum Section
     {
+        Home,
         Live,
         Movies,
         Series,
@@ -32,21 +33,26 @@ public sealed partial class MainWindow : Window
     }
 
     // Label, video-aspect-override, panscan, keepaspect.
-    private static readonly (string Label, string Aspect, string Panscan, string KeepAspect)[] PictureFormats =
+    private static (string Label, string Aspect, string Panscan, string KeepAspect)[] PictureFormats =>
     [
-        ("Original", "no", "0", "yes"),
-        ("Bild füllen (Zoom)", "no", "1", "yes"),
+        (Strings.Original, "no", "0", "yes"),
+        (Strings.FillZoom, "no", "1", "yes"),
         ("16:9", "16:9", "0", "yes"),
         ("4:3", "4:3", "0", "yes"),
-        ("Strecken", "no", "0", "no"),
+        (Strings.Stretch, "no", "0", "no"),
     ];
 
     private const int MaxReconnects = 5;
 
-    private const string AllGroups = "Alle";
-    private const string FavoritesGroup = "★ Favoriten";
-    private const string NoGroup = "Ohne Gruppe";
-    private static readonly string[] SectionTitles = ["Live TV", "Filme", "Serien", "TV-Guide"];
+    // Properties, not fields: they must be read after the constructor has set the language.
+    private static string AllGroups => Strings.AllGroups;
+    private static string FavoritesGroup => Strings.FavoritesGroup;
+    private static string NoGroup => Strings.NoGroup;
+    private static string[] SectionTitles => [Strings.Home, Strings.LiveTv, Strings.Movies, Strings.Series, Strings.Guide];
+
+    // Hidden groups are saved under the German names the app had before it spoke English, so they survive a language switch.
+    private static readonly string[] SectionKeys = ["Startseite", "Live TV", "Filme", "Serien", "TV-Guide"];
+    private const string NoGroupKey = "Ohne Gruppe";
     private static readonly TimeSpan EpgMaxAge = TimeSpan.FromHours(12);
     private const double GuidePxPerMinute = 4, GuideNameWidth = 220;
     private const int GuideHours = 6;
@@ -60,6 +66,9 @@ public sealed partial class MainWindow : Window
     private readonly AppState _state = AppState.Load();
     private readonly List<Channel> _channels = [];
     private readonly Dictionary<Guid, EpgGuide> _guides = [];
+    /// <summary>Why a source has no guide, shown above the TV guide.</summary>
+    private readonly Dictionary<Guid, string> _epgErrors = [];
+    private bool _epgLoading;
     private readonly MpvPlayer? _player;
     private readonly Updater _updater = new();
     private readonly string? _playerError;
@@ -91,8 +100,18 @@ public sealed partial class MainWindow : Window
     /// <summary>Set while the group list is rebuilt, so its selection events do not reset the view.</summary>
     private bool _refreshingGroups;
 
+    /// <summary>Set while the source picker is rebuilt, so its selection events do not reload.</summary>
+    private bool _refreshingSources;
+
+    /// <summary>Counts reloads, so an older one that is still waiting on its provider stops instead of mixing in its channels.</summary>
+    private int _reloadVersion;
+
+    /// <summary>The source whose channels are shown. Only one at a time, so providers that allow a single connection are not hit twice.</summary>
+    private SourceConfig? Active => _sources.Find(s => s.Id == _state.ActiveSource) ?? _sources.FirstOrDefault();
+
     public MainWindow()
     {
+        Strings.Language = _state.Language; // before InitializeComponent, whose x:Bind texts read it
         InitializeComponent();
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
@@ -106,11 +125,11 @@ public sealed partial class MainWindow : Window
         }
         catch (DllNotFoundException)
         {
-            _playerError = "libmpv-2.dll fehlt neben TwoKPlayer.App.exe. Bitte scripts/fetch-libmpv.ps1 ausführen und neu bauen.";
+            _playerError = Strings.LibmpvMissing;
         }
         catch (Exception ex) when (ex is BadImageFormatException or EntryPointNotFoundException or InvalidOperationException)
         {
-            _playerError = $"Player konnte nicht starten: {ex.Message}";
+            _playerError = Strings.PlayerFailed(ex.Message);
         }
 
         if (_player is not null)
@@ -136,32 +155,99 @@ public sealed partial class MainWindow : Window
             _player?.Dispose();
         };
 
-        SectionList.SelectedIndex = 0;
-        _ = StartAsync();
+        SectionList.SelectedIndex = (int)Section.Home; // nothing plays yet, so the app opens without the player
+        // The source dialog needs the XamlRoot, which exists only once the content is loaded.
+        void OnLoaded(object sender, RoutedEventArgs e)
+        {
+            Root.Loaded -= OnLoaded;
+            _ = StartAsync();
+        }
+        Root.Loaded += OnLoaded;
     }
 
     private async Task StartAsync()
     {
+        // With a single source there is nothing to choose.
+        if (_sources.Count > 1)
+            await PickSourceAsync();
+        RefreshSourcePicker();
         await ReloadAsync();
-        // Only offered; installing waits for a click on the button.
-        if (await _updater.CheckAsync() is { } version)
+        if (await _updater.CheckAsync() != UpdateCheck.Available || _updater.AvailableVersion is not { } version)
+            return;
+        OfferUpdate(version);
+        if (await AskToUpdateAsync(version))
+            await InstallUpdateAsync();
+    }
+
+    /// <summary>"Later" keeps the offer as a button at the bottom left; installing always waits for a click.</summary>
+    private void OfferUpdate(string version)
+    {
+        UpdateText.Text = Strings.InstallUpdate(version);
+        UpdateButton.Visibility = Visibility.Visible;
+    }
+
+    private async Task<bool> AskToUpdateAsync(string version)
+    {
+        // Not over a playing fullscreen or mini player, and not on top of a dialog the user already opened.
+        if (_mode != ViewMode.Normal || Content.XamlRoot is null || VisualTreeHelper.GetOpenPopupsForXamlRoot(Content.XamlRoot).Count > 0)
+            return false;
+
+        var changes = _updater.Changes();
+        var list = new StackPanel { Spacing = 6 };
+        foreach (var change in changes)
+            list.Children.Add(new TextBlock { Text = "•  " + change, TextWrapping = TextWrapping.Wrap });
+        if (changes.Count == 0)
+            list.Children.Add(new TextBlock { Text = Strings.NoPatchNotes, Opacity = 0.7 });
+
+        var dialog = new ContentDialog
         {
-            UpdateText.Text = $"Update {version} installieren";
-            UpdateButton.Visibility = Visibility.Visible;
+            XamlRoot = Content.XamlRoot,
+            Title = Strings.UpdateAvailable(version),
+            PrimaryButtonText = Strings.UpdateNow,
+            CloseButtonText = Strings.Later,
+            DefaultButton = ContentDialogButton.Primary,
+            Content = new StackPanel
+            {
+                Spacing = 8,
+                Width = 420,
+                Children =
+                {
+                    new TextBlock { Text = Strings.NewInVersion, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
+                    new ScrollViewer { MaxHeight = 320, Content = list },
+                    new TextBlock
+                    {
+                        Text = Strings.UpdateKeeps,
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.7,
+                        Margin = new Thickness(0, 8, 0, 0),
+                    },
+                },
+            },
+        };
+        try
+        {
+            return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        }
+        catch (COMException)
+        {
+            return false; // another dialog opened in the meantime; the button stays
         }
     }
 
-    private async void OnUpdate(object sender, RoutedEventArgs e)
+    private async void OnUpdate(object sender, RoutedEventArgs e) => await InstallUpdateAsync();
+
+    /// <summary>Restarts into the new version; returns only when that failed.</summary>
+    private async Task InstallUpdateAsync()
     {
         UpdateButton.IsEnabled = false;
-        UpdateText.Text = "Update wird geladen …";
+        UpdateText.Text = Strings.UpdateLoading;
         SaveResume();
         _state.Save();
         // Restarts the app when done. Sources, favorites and credentials live outside the install folder.
         if (!await _updater.InstallAsync())
         {
-            ShowStatus(InfoBarSeverity.Error, "Update konnte nicht geladen werden. Bitte später erneut versuchen.");
-            UpdateText.Text = "Update erneut versuchen";
+            ShowStatus(InfoBarSeverity.Error, Strings.UpdateFailed);
+            UpdateText.Text = Strings.UpdateRetry;
             UpdateButton.IsEnabled = true;
         }
     }
@@ -170,30 +256,40 @@ public sealed partial class MainWindow : Window
 
     private async Task ReloadAsync()
     {
+        var version = ++_reloadVersion;
+        List<SourceConfig> sources = Active is { } active ? [active] : [];
         _channels.Clear();
         _guides.Clear();
-        if (_sources.Count == 0)
+        _epgErrors.Clear();
+        _epgLoading = true;
+        if (sources.Count == 0)
         {
-            ShowStatus(InfoBarSeverity.Informational, "Noch keine Quelle. Füge eine M3U-Playlist oder einen Xtream-Zugang hinzu.");
+            ShowStatus(InfoBarSeverity.Informational, Strings.NoSourceYet);
             RefreshGroups();
             return;
         }
 
         // 1. Last known data first, so the app is usable before any provider answers.
-        var cached = await Task.Run(() => _sources.Select(s => ChannelCache.Load(s.Id)).ToList());
+        var cached = await Task.Run(() => sources.Select(s => ChannelCache.Load(s.Id)).ToList());
+        if (version != _reloadVersion)
+            return;
         foreach (var playlist in cached)
             _channels.AddRange(playlist?.Channels ?? []);
         if (_channels.Count > 0)
         {
             RefreshGroups();
-            foreach (var source in _sources)
+            foreach (var source in sources)
                 await LoadCachedEpgAsync(source);
+            if (version != _reloadVersion)
+                return;
             RefreshChannels();
         }
-        ShowStatus(InfoBarSeverity.Informational, "Aktualisiere Sender …");
+        ShowStatus(InfoBarSeverity.Informational, Strings.Refreshing);
 
         // 2. Fresh lists from the providers. A source that fails keeps its cached list.
-        var results = await Task.WhenAll(_sources.Select(LoadSafeAsync));
+        var results = await Task.WhenAll(sources.Select(LoadSafeAsync));
+        if (version != _reloadVersion)
+            return;
         var errors = new List<string>();
         _channels.Clear();
         for (var i = 0; i < results.Length; i++)
@@ -213,9 +309,9 @@ public sealed partial class MainWindow : Window
         RefreshGroups();
         ShowStatus(errors.Count > 0 ? InfoBarSeverity.Warning : InfoBarSeverity.Informational,
             errors.Count > 0 ? string.Join("\n", errors)
-                : $"{Count(MediaKind.Live)} Sender, {Count(MediaKind.Movie)} Filme, {Count(MediaKind.Series)} Serien. EPG wird aktualisiert …");
+                : Strings.Loaded(Count(MediaKind.Live), Count(MediaKind.Movie), Count(MediaKind.Series)));
 
-        // 3. EPG: download only when the cached file is missing or older than EpgMaxAge.
+        // 3. EPG: download only when the cached file is missing, older than EpgMaxAge or from another URL.
         foreach (var (source, playlist, error) in results)
         {
             if (error is not null)
@@ -224,13 +320,22 @@ public sealed partial class MainWindow : Window
             {
                 var path = ChannelCache.EpgPath(source.Id);
                 if (await Task.Run(() => _loader.UpdateEpgCacheAsync(source, playlist, path, EpgMaxAge)) || !_guides.ContainsKey(source.Id))
+                {
+                    _guides.Remove(source.Id);
+                    _epgErrors.Remove(source.Id);
                     await LoadCachedEpgAsync(source);
+                }
             }
             catch (Exception ex)
             {
-                errors.Add($"EPG {source.Name}: {ex.Message}");
+                _epgErrors[source.Id] = Strings.EpgFailed(ex.Message);
             }
+            if (_epgErrors.TryGetValue(source.Id, out var epgError))
+                errors.Add($"{source.Name}: {epgError}");
         }
+        if (version != _reloadVersion)
+            return;
+        _epgLoading = false;
 
         RefreshChannels();
         if (errors.Count > 0)
@@ -248,9 +353,12 @@ public sealed partial class MainWindow : Window
         {
             _guides[source.Id] = await Task.Run(() => SourceLoader.LoadEpgFileAsync(path));
         }
-        catch (Exception ex) when (ex is IOException or System.Xml.XmlException or InvalidDataException)
+        catch (Exception ex) when (ex is IOException or System.Xml.XmlException or InvalidDataException or EpgFormatException)
         {
-            File.Delete(path); // broken cache file; the next refresh downloads a new one
+            // Broken cache file; the next refresh downloads a new one.
+            File.Delete(path);
+            File.Delete(path + ".url");
+            _epgErrors[source.Id] = ex is EpgFormatException format ? Strings.EpgFormat(format.Error) : Strings.EpgFailed(ex.Message);
         }
     }
 
@@ -264,7 +372,7 @@ public sealed partial class MainWindow : Window
         {
             // 884 is a panel-specific code (Xtream UI/XUI) for blocked or over-limit accounts.
             return (source, new PlaylistResult([], []),
-                $"Zugang abgelehnt (HTTP {(int)ex.StatusCode!}). Prüfe die Zugangsdaten oder ob der Anbieter gerade eine weitere Verbindung erlaubt.");
+                Strings.AccessDenied((int)ex.StatusCode!));
         }
         catch (Exception ex)
         {
@@ -276,7 +384,7 @@ public sealed partial class MainWindow : Window
 
     // ---------------------------------------------------------------- lists
 
-    // M3U playlists list series episodes one by one, so they show up under Serien too.
+    // M3U playlists list series episodes one by one, so they show up under Series too.
     private bool InSection(Channel c) => _section switch
     {
         Section.Movies => c.Kind == MediaKind.Movie,
@@ -287,16 +395,25 @@ public sealed partial class MainWindow : Window
     private static string GroupOf(Channel c) => c.Group ?? NoGroup;
 
     // The guide shows live channels, so it shares Live TV's hidden groups.
-    private string HiddenKey(string group) => $"{SectionTitles[_section == Section.Guide ? 0 : (int)_section]} · {group}";
+    private string HiddenKey(string group)
+        => $"{SectionKeys[(int)(_section == Section.Guide ? Section.Live : _section)]} · {(group == NoGroup ? NoGroupKey : group)}";
+
+    /// <summary>A HiddenKey's section and group in the current language, for the settings page.</summary>
+    private static (string Section, string Group) HiddenLabel(string key)
+    {
+        var parts = key.Split(" · ", 2);
+        var section = Array.IndexOf(SectionKeys, parts[0]);
+        if (parts.Length < 2 || section < 0)
+            return ("", key);
+        return (SectionTitles[section], parts[1] == NoGroupKey ? NoGroup : parts[1]);
+    }
 
     private bool IsHidden(string group) => _state.HiddenGroups.Contains(HiddenKey(group));
 
-    private bool InGroup(Channel c, string group) => group switch
-    {
-        AllGroups => !IsHidden(GroupOf(c)),
-        FavoritesGroup => _state.Favorites.Contains(c.Id),
-        _ => GroupOf(c) == group,
-    };
+    private bool InGroup(Channel c, string group)
+        => group == AllGroups ? !IsHidden(GroupOf(c))
+            : group == FavoritesGroup ? _state.Favorites.Contains(c.Id)
+            : GroupOf(c) == group;
 
     private EpgGuide GuideFor(Channel c)
         => c.Kind == MediaKind.Live ? _guides.GetValueOrDefault(c.SourceId) ?? EpgGuide.Empty : EpgGuide.Empty;
@@ -326,7 +443,9 @@ public sealed partial class MainWindow : Window
 
         // The search matches channel names and, for live channels, programmes that are on now or later.
         var items = new List<(Channel Channel, EpgProgramme? Match)>();
-        foreach (var c in _episodes ?? _channels.Where(c => InSection(c) && InGroup(c, group)))
+        var source = _episodes
+            ?? (_section == Section.Home ? _channels.Where(c => _state.Favorites.Contains(c.Id)) : _channels.Where(c => InSection(c) && InGroup(c, group)));
+        foreach (var c in source)
         {
             if (query.Length == 0 || c.Name.Contains(query, StringComparison.CurrentCultureIgnoreCase))
                 items.Add((c, null));
@@ -335,13 +454,62 @@ public sealed partial class MainWindow : Window
         }
         CountText.Text = items.Count.ToString();
 
-        if (_section == Section.Guide)
+        if (_section == Section.Home)
+            ShowHome(items, now);
+        else if (_section == Section.Guide)
             ShowGuide(items.Select(i => i.Channel).ToList(), now);
         else
             ChannelList.ItemsSource = items
                 .Select(i => new ChannelRow(i.Channel, GuideFor(i.Channel), now, _state.Favorites.Contains(i.Channel.Id), _state.Watched.Contains(i.Channel.Id), i.Match))
                 .ToList();
     }
+
+    private void ShowHome(List<(Channel Channel, EpgProgramme? Match)> items, DateTimeOffset now)
+    {
+        var rows = items.ConvertAll(i => new ChannelRow(i.Channel, GuideFor(i.Channel), now, true, _state.Watched.Contains(i.Channel.Id), i.Match));
+        // M3U playlists list series episodes one by one; those count as series here, as in the Series section.
+        Fill(HomeLiveHeader, HomeLive, rows.FindAll(r => r.Channel.Kind == MediaKind.Live));
+        Fill(HomeMoviesHeader, HomeMovies, rows.FindAll(r => r.Channel.Kind == MediaKind.Movie));
+        Fill(HomeSeriesHeader, HomeSeries, rows.FindAll(r => r.Channel.Kind is MediaKind.Series or MediaKind.Episode));
+        HomeEmpty.Visibility = rows.Count == 0 && _state.Favorites.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        NowPlayingButton.Visibility = _playing is null ? Visibility.Collapsed : Visibility.Visible;
+        NowPlayingText.Text = _playing?.Name ?? "";
+
+        static void Fill(UIElement header, ListViewBase list, List<ChannelRow> rows)
+        {
+            header.Visibility = list.Visibility = rows.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            list.ItemsSource = rows;
+        }
+    }
+
+    private void OnHomeItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is ChannelRow row)
+            Open(row.Channel, favorites: true);
+    }
+
+    private void OnBackToPlayer(object sender, RoutedEventArgs e)
+    {
+        if (_playing is { } channel)
+            SectionList.SelectedIndex = (int)SectionOf(channel);
+    }
+
+    private void OnRemoveFavorite(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not ChannelRow row)
+            return;
+        _state.Favorites.Remove(row.Channel.Id);
+        _state.Save();
+        RefreshChannels();
+    }
+
+    private static Section SectionOf(Channel c) => c.Kind switch
+    {
+        MediaKind.Live => Section.Live,
+        MediaKind.Movie => Section.Movies,
+        _ => Section.Series,
+    };
 
     private void ShowGuide(List<Channel> channels, DateTimeOffset now)
     {
@@ -360,6 +528,27 @@ public sealed partial class MainWindow : Window
         }
         NowLine.Margin = new Thickness(GuideNameWidth + (now - start).TotalMinutes * GuidePxPerMinute, 0, 0, 0);
         GuideList.ItemsSource = channels.Select(c => new GuideRow(c, GuideFor(c), start, end, GuidePxPerMinute, now)).ToList();
+        ShowGuideNotice(channels, now);
+    }
+
+    /// <summary>Explains an empty or partly empty guide instead of leaving the user with blank rows.</summary>
+    private void ShowGuideNotice(List<Channel> channels, DateTimeOffset now)
+    {
+        string? message = null;
+        var severity = InfoBarSeverity.Warning;
+        if (Active is { } source)
+        {
+            if (_epgErrors.TryGetValue(source.Id, out var error))
+                (message, severity) = (error, InfoBarSeverity.Error);
+            else if (!_guides.TryGetValue(source.Id, out var guide))
+                (message, severity) = _epgLoading ? (Strings.EpgLoading, InfoBarSeverity.Informational) : (Strings.NoEpg, InfoBarSeverity.Warning);
+            else
+                message = Strings.EpgProblem(guide.Diagnose(channels, now));
+        }
+
+        GuideInfo.Severity = severity;
+        GuideInfo.Message = message ?? "";
+        GuideInfo.IsOpen = message is not null;
     }
 
     private void OnSectionChanged(object sender, SelectionChangedEventArgs e)
@@ -370,12 +559,19 @@ public sealed partial class MainWindow : Window
         _episodes = null;
 
         var guide = _section == Section.Guide;
+        var home = _section == Section.Home;
         GuidePanel.Visibility = guide ? Visibility.Visible : Visibility.Collapsed;
-        ChannelPane.Visibility = PlayerGrid.Visibility = guide ? Visibility.Collapsed : Visibility.Visible;
-        // The video is a native window above all XAML; it has to hide while the guide covers the player.
-        _player?.SetVisible(!guide && _playing is not null);
+        HomePanel.Visibility = home ? Visibility.Visible : Visibility.Collapsed;
+        ChannelPane.Visibility = PlayerGrid.Visibility = guide || home ? Visibility.Collapsed : Visibility.Visible;
+        // The home page has no groups; it shows the favorites of all sections.
+        CategoriesHeader.Visibility = GroupList.Visibility = home ? Visibility.Collapsed : Visibility.Visible;
+        // The video is a native window above all XAML; it has to hide while the guide or home page covers the player.
+        _player?.SetVisible(VideoShown);
         RefreshGroups();
     }
+
+    /// <summary>Whether the section shows the player; playback goes on in the background elsewhere.</summary>
+    private bool VideoShown => _section is not (Section.Home or Section.Guide) && _playing is not null && !SettingsOpen;
 
     private void OnGroupSelected(object sender, SelectionChangedEventArgs e)
     {
@@ -385,7 +581,12 @@ public sealed partial class MainWindow : Window
         RefreshChannels();
     }
 
-    private void OnSearchChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs e) => RefreshChannels();
+    // Raised asynchronously; code that clears the box refreshes the list itself, so a late refresh does not drop the selection.
+    private void OnSearchChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs e)
+    {
+        if (e.Reason != AutoSuggestionBoxTextChangeReason.ProgrammaticChange)
+            RefreshChannels();
+    }
 
     private void OnBack(object sender, RoutedEventArgs e)
     {
@@ -406,7 +607,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException)
         {
-            ShowStatus(InfoBarSeverity.Error, $"Episoden von {series.Name}: {ex.Message}");
+            ShowStatus(InfoBarSeverity.Error, Strings.EpisodesFailed(series.Name, ex.Message));
         }
     }
 
@@ -421,7 +622,7 @@ public sealed partial class MainWindow : Window
             _state.Favorites.Remove(row.Channel.Id);
         _state.Save();
 
-        // Only rebuild the lists when the Favoriten group has to appear or disappear.
+        // Only rebuild the lists when the favorites group has to appear or disappear.
         var hasGroup = GroupList.ItemsSource is List<string> groups && groups.Contains(FavoritesGroup);
         if (hasGroup != _channels.Any(c => InSection(c) && _state.Favorites.Contains(c.Id)))
             RefreshGroups();
@@ -429,7 +630,7 @@ public sealed partial class MainWindow : Window
 
     private void OnHideGroup(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is not string group || group is AllGroups or FavoritesGroup)
+        if ((sender as FrameworkElement)?.Tag is not string group || group == AllGroups || group == FavoritesGroup)
             return;
         _state.HiddenGroups.Add(HiddenKey(group));
         _state.Save();
@@ -457,7 +658,7 @@ public sealed partial class MainWindow : Window
         if (_player is null)
         {
             // Shown on click because the startup message is replaced by the loading status.
-            ShowStatus(InfoBarSeverity.Error, _playerError ?? "Player nicht verfügbar.");
+            ShowStatus(InfoBarSeverity.Error, _playerError ?? Strings.PlayerUnavailable);
             return;
         }
 
@@ -470,7 +671,7 @@ public sealed partial class MainWindow : Window
         NowProgramme.Text = current?.Title ?? "";
         NowProgress.Value = current?.Progress(now) ?? 0;
         NowProgress.Visibility = current is null ? Visibility.Collapsed : Visibility.Visible;
-        NextProgramme.Text = next is null ? "" : $"Danach {next.Start.ToLocalTime():HH:mm}  {next.Title}";
+        NextProgramme.Text = next is null ? "" : Strings.Next($"{next.Start.ToLocalTime():HH:mm}", next.Title);
 
         try
         {
@@ -478,10 +679,11 @@ public sealed partial class MainWindow : Window
             var resume = live ? 0 : _state.Resume.GetValueOrDefault(channel.Id);
             _player.Play(channel.StreamUrl, channel.UserAgent, channel.Referrer, resume);
             _playing = channel;
+            _player.SetVisible(VideoShown); // the next episode can start while the home page or guide is open
             _reconnects = 0;
             SetPaused(false);
             if (resume > 0)
-                ShowStatus(InfoBarSeverity.Informational, $"Weiter ab {TimeSpan.FromSeconds(resume):h\\:mm\\:ss}");
+                ShowStatus(InfoBarSeverity.Informational, Strings.ResumingAt($"{TimeSpan.FromSeconds(resume):h\\:mm\\:ss}"));
 
             LiveButton.Visibility = live ? Visibility.Visible : Visibility.Collapsed;
             SeekBackButton.Visibility = SeekForwardButton.Visibility = live ? Visibility.Collapsed : Visibility.Visible;
@@ -517,7 +719,7 @@ public sealed partial class MainWindow : Window
     {
         _lastStart = DateTime.UtcNow;
         if (_reconnects > 0)
-            StatusBar.IsOpen = false; // the "verbinde neu" message
+            StatusBar.IsOpen = false; // the "reconnecting" message
     }
 
     private async void OnPlaybackEnded(string? error)
@@ -535,20 +737,23 @@ public sealed partial class MainWindow : Window
             }
             if (_reconnects >= MaxReconnects)
             {
-                ShowStatus(InfoBarSeverity.Error, $"{channel.Name}: Verbindung verloren{(error is null ? "" : $" ({error})")}. Drück LIVE für einen neuen Versuch.");
+                ShowStatus(InfoBarSeverity.Error, Strings.ConnectionLost(channel.Name, error));
                 return;
             }
             _reconnects++;
-            ShowStatus(InfoBarSeverity.Warning, $"Verbindung unterbrochen, verbinde neu ({_reconnects}/{MaxReconnects}) …");
+            ShowStatus(InfoBarSeverity.Warning, Strings.Reconnecting(_reconnects, MaxReconnects));
             await Task.Delay(TimeSpan.FromSeconds(2 * _reconnects));
             if (_playing == channel)
+            {
                 _player?.Play(channel.StreamUrl, channel.UserAgent, channel.Referrer);
+                _player?.SetVisible(VideoShown);
+            }
             return;
         }
 
         if (error is not null)
         {
-            ShowStatus(InfoBarSeverity.Error, $"Wiedergabe fehlgeschlagen: {error}");
+            ShowStatus(InfoBarSeverity.Error, Strings.PlaybackFailed(error));
             return;
         }
 
@@ -559,7 +764,7 @@ public sealed partial class MainWindow : Window
         if (channel.Kind == MediaKind.Episode && index >= 0 && index + 1 < _playQueue.Count && _playQueue[index + 1].Kind == MediaKind.Episode)
         {
             var next = _playQueue[index + 1];
-            ShowStatus(InfoBarSeverity.Informational, $"Nächste Folge: {next.Name}");
+            ShowStatus(InfoBarSeverity.Informational, Strings.NextEpisode(next.Name));
             Play(next);
         }
         RefreshChannels(); // shows the watched mark
@@ -569,7 +774,7 @@ public sealed partial class MainWindow : Window
 
     private void StepChannel(int delta)
     {
-        if (_section == Section.Guide || ChannelList.Items.Count == 0)
+        if (_section is (Section.Home or Section.Guide) || ChannelList.Items.Count == 0)
             return;
         ChannelList.SelectedIndex = Math.Clamp(ChannelList.SelectedIndex + delta, 0, ChannelList.Items.Count - 1);
         ChannelList.ScrollIntoView(ChannelList.SelectedItem);
@@ -639,22 +844,23 @@ public sealed partial class MainWindow : Window
         var flyout = (MenuFlyout)sender!;
         flyout.Items.Clear();
         var tracks = _player?.Tracks() ?? [];
-        AddTracks(flyout, "Tonspur", "audio", "aid", tracks, allowOff: false);
+        AddTracks(flyout, Strings.AudioTrack, "audio", "aid", tracks, allowOff: false);
         flyout.Items.Add(new MenuFlyoutSeparator());
-        AddTracks(flyout, "Untertitel", "sub", "sid", tracks, allowOff: true);
+        AddTracks(flyout, Strings.Subtitles, "sub", "sid", tracks, allowOff: true);
 
         flyout.Items.Add(new MenuFlyoutSeparator());
-        flyout.Items.Add(new MenuFlyoutItem { Text = "Bildformat", IsEnabled = false });
-        for (var i = 0; i < PictureFormats.Length; i++)
+        flyout.Items.Add(new MenuFlyoutItem { Text = Strings.PictureFormat, IsEnabled = false });
+        var formats = PictureFormats;
+        for (var i = 0; i < formats.Length; i++)
         {
             var format = i;
-            var item = new ToggleMenuFlyoutItem { Text = PictureFormats[i].Label, IsChecked = i == _pictureFormat };
+            var item = new ToggleMenuFlyoutItem { Text = formats[i].Label, IsChecked = i == _pictureFormat };
             item.Click += (_, _) => SetPictureFormat(format);
             flyout.Items.Add(item);
         }
 
         flyout.Items.Add(new MenuFlyoutSeparator());
-        var stats = new MenuFlyoutItem { Text = "Stream-Info ein/aus (I)" };
+        var stats = new MenuFlyoutItem { Text = Strings.StreamInfo };
         stats.Click += (_, _) => _player?.ToggleStats();
         flyout.Items.Add(stats);
     }
@@ -674,11 +880,11 @@ public sealed partial class MainWindow : Window
         flyout.Items.Add(new MenuFlyoutItem { Text = header, IsEnabled = false });
         var ofType = tracks.Where(t => t.Type == type).ToList();
         if (allowOff)
-            AddTrackItem(flyout, "Aus", !ofType.Any(t => t.Selected), property, "no");
+            AddTrackItem(flyout, Strings.Off, !ofType.Any(t => t.Selected), property, "no");
         foreach (var track in ofType)
             AddTrackItem(flyout, track.Label, track.Selected, property, track.Id);
         if (ofType.Count == 0 && !allowOff)
-            flyout.Items.Add(new MenuFlyoutItem { Text = "Keine", IsEnabled = false });
+            flyout.Items.Add(new MenuFlyoutItem { Text = Strings.None, IsEnabled = false });
     }
 
     private void AddTrackItem(MenuFlyout flyout, string text, bool selected, string property, string value)
@@ -702,13 +908,32 @@ public sealed partial class MainWindow : Window
             PlayFromGuide(row.Channel);
     }
 
-    private void PlayFromGuide(Channel channel)
+    private void PlayFromGuide(Channel channel) => Open(channel, favorites: false);
+
+    /// <summary>
+    /// Switches to the channel's section and selects it there, which plays it or opens a series' episodes.
+    /// With favorites, the favorites group is selected, so channel up/down zaps through the favorites;
+    /// otherwise the selected group stays, see RefreshGroups.
+    /// </summary>
+    private void Open(Channel channel, bool favorites)
     {
-        SectionList.SelectedIndex = (int)Section.Live; // keeps the selected group, see RefreshGroups
+        SectionList.SelectedIndex = (int)SectionOf(channel);
+        if (favorites && GroupList.ItemsSource is List<string> groups && groups.IndexOf(FavoritesGroup) is var index and >= 0)
+        {
+            SearchBox.Text = ""; // a search on the home page filtered the favorites, not this list
+            _refreshingGroups = true;
+            GroupList.SelectedIndex = index;
+            _refreshingGroups = false;
+            RefreshChannels();
+        }
         if (ChannelList.ItemsSource is List<ChannelRow> rows && rows.Find(r => r.Channel.Id == channel.Id) is { } row)
         {
             ChannelList.SelectedItem = row;
             ChannelList.ScrollIntoView(row);
+        }
+        else if (channel.Kind == MediaKind.Series)
+        {
+            _ = ShowEpisodesAsync(channel);
         }
         else
         {
@@ -720,6 +945,16 @@ public sealed partial class MainWindow : Window
 
     private void OnPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        // The settings page keeps keys for its own buttons and lists; Esc leaves it.
+        if (SettingsOpen)
+        {
+            if (e.Key == VirtualKey.Escape)
+            {
+                CloseSettings();
+                e.Handled = true;
+            }
+            return;
+        }
         if (e.OriginalSource is TextBox or PasswordBox)
             return;
         // Lists keep their own arrow navigation; selecting a channel there plays it anyway.
@@ -820,7 +1055,7 @@ public sealed partial class MainWindow : Window
     /// <summary>Normal window, fullscreen, or the mini player: a small always-on-top window with only the video.</summary>
     private void SetMode(ViewMode mode)
     {
-        if (mode == _mode || (_section == Section.Guide && mode != ViewMode.Normal))
+        if (mode == _mode || ((_section is (Section.Home or Section.Guide) || SettingsOpen) && mode != ViewMode.Normal))
             return;
         if (_mode == ViewMode.Normal && mode == ViewMode.Mini)
             _restoreBounds = new Windows.Graphics.RectInt32(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
@@ -953,91 +1188,148 @@ public sealed partial class MainWindow : Window
 
     // ---------------------------------------------------------------- sources and settings
 
-    private async void OnAddSource(object sender, RoutedEventArgs e)
+    private async void OnAddSource(object sender, RoutedEventArgs e) => await AddSourceAsync();
+
+    private async Task AddSourceAsync()
     {
-        var kind = new ComboBox { Header = "Typ", ItemsSource = new[] { "M3U-Playlist", "Xtream Codes" }, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
-        var name = new TextBox { Header = "Name" };
-        var location = new TextBox { Header = "Playlist-URL oder Datei / Xtream-Server" };
-        var user = new TextBox { Header = "Benutzername (Xtream)" };
-        var pass = new PasswordBox { Header = "Passwort (Xtream)" };
-        var epg = new TextBox { Header = "EPG-URL (optional, XMLTV)" };
+        if (await ShowSourceDialogAsync(null) is not { } source)
+            return;
+        // Adding the same playlist again replaces it.
+        _sources.RemoveAll(s => string.Equals(s.M3uLocation ?? s.Server, source.M3uLocation ?? source.Server, StringComparison.OrdinalIgnoreCase)
+            && s.Username == source.Username);
+        _sources.Add(source);
+        SourceStore.Save(_sources);
+        // Whoever adds a source wants to see it.
+        _state.ActiveSource = source.Id;
+        _state.Save();
+        RefreshSourcePicker();
+        await ReloadAsync();
+    }
+
+    private async Task EditSourceAsync(SourceConfig source)
+    {
+        if (await ShowSourceDialogAsync(source) is not { } edited || edited == source)
+            return;
+        _sources[_sources.IndexOf(source)] = edited;
+        SourceStore.Save(_sources);
+        RefreshSourcePicker();
+        // A new name alone needs no new channel list.
+        if (edited.Id == Active?.Id && edited with { Name = source.Name } != source)
+            await ReloadAsync();
+    }
+
+    /// <summary>Asks for a new source, or for changes to <paramref name="existing"/>. Null when cancelled.</summary>
+    private async Task<SourceConfig?> ShowSourceDialogAsync(SourceConfig? existing)
+    {
+        var wasXtream = existing?.Kind == SourceKind.Xtream;
+        var kind = new ComboBox { Header = Strings.SourceType, ItemsSource = new[] { Strings.M3uPlaylist, "Xtream Codes" }, SelectedIndex = wasXtream ? 1 : 0, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var name = new TextBox { Header = Strings.NameHeader, Text = existing?.Name ?? "" };
+        var location = new TextBox { Header = Strings.LocationHeader, Text = (wasXtream ? existing?.Server : existing?.M3uLocation) ?? "" };
+        var user = new TextBox { Header = Strings.UsernameHeader, Text = existing?.Username ?? "" };
+        var pass = new PasswordBox { Header = Strings.PasswordHeader, Password = existing?.Password ?? "" };
+        var epg = new TextBox { Header = Strings.EpgHeader, Text = existing?.EpgUrl ?? "" };
 
         var dialog = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
-            Title = "Quelle hinzufügen",
-            PrimaryButtonText = "Hinzufügen",
-            CloseButtonText = "Abbrechen",
+            Title = existing is null ? Strings.AddSource : Strings.EditSource,
+            PrimaryButtonText = existing is null ? Strings.Add : Strings.Save,
+            CloseButtonText = Strings.Cancel,
             DefaultButton = ContentDialogButton.Primary,
             Content = new StackPanel { Spacing = 8, Width = 400, Children = { kind, name, location, user, pass, epg } },
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary || string.IsNullOrWhiteSpace(location.Text))
-            return;
+            return null;
 
         var xtream = kind.SelectedIndex == 1;
-        // Adding the same playlist again replaces it; duplicates would hit the provider in parallel.
-        var username = xtream ? user.Text.Trim() : null;
-        _sources.RemoveAll(s => string.Equals(s.M3uLocation ?? s.Server, location.Text.Trim(), StringComparison.OrdinalIgnoreCase) && s.Username == username);
-        _sources.Add(new SourceConfig
+        return new SourceConfig
         {
+            // Keeping the id keeps the cached lists and the place in the locker.
+            Id = existing?.Id ?? Guid.NewGuid(),
             Name = string.IsNullOrWhiteSpace(name.Text) ? location.Text.Trim() : name.Text.Trim(),
             Kind = xtream ? SourceKind.Xtream : SourceKind.M3u,
             M3uLocation = xtream ? null : location.Text.Trim(),
             Server = xtream ? location.Text.Trim() : null,
-            Username = username,
+            Username = xtream ? user.Text.Trim() : null,
             Password = xtream ? pass.Password : null,
             EpgUrl = string.IsNullOrWhiteSpace(epg.Text) ? null : epg.Text.Trim(),
-        });
-        SourceStore.Save(_sources);
-        await ReloadAsync();
+        };
     }
 
-    private async void OnManageSources(object sender, RoutedEventArgs e)
+    /// <summary>Asks which of several sources to use, with the last one used preselected.</summary>
+    private async Task PickSourceAsync()
     {
-        var sourceList = new ListView { SelectionMode = ListViewSelectionMode.Multiple, ItemsSource = _sources.Select(s => s.Name).ToList() };
-        var hidden = _state.HiddenGroups.Order(StringComparer.CurrentCultureIgnoreCase).ToList();
-        var hiddenList = new ListView { SelectionMode = ListViewSelectionMode.Multiple, ItemsSource = hidden };
+        var choices = new RadioButtons { ItemsSource = _sources.Select(s => s.Name).ToList(), SelectedIndex = Active is { } a ? _sources.IndexOf(a) : 0 };
         var dialog = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
-            Title = "Einstellungen",
-            PrimaryButtonText = "Markierte entfernen bzw. einblenden",
-            CloseButtonText = "Schließen",
+            Title = Strings.WhichSource,
+            PrimaryButtonText = Strings.Use,
+            DefaultButton = ContentDialogButton.Primary,
             Content = new StackPanel
             {
-                Spacing = 8,
-                Width = 420,
+                Spacing = 12,
+                Width = 400,
                 Children =
                 {
-                    new TextBlock { Text = "Quellen", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
-                    _sources.Count == 0 ? new TextBlock { Text = "Keine Quellen vorhanden." } : sourceList,
-                    new TextBlock { Text = "Ausgeblendete Gruppen", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 12, 0, 0) },
-                    hidden.Count == 0 ? new TextBlock { Text = "Keine. Rechtsklick auf eine Gruppe blendet sie aus." } : hiddenList,
+                    new TextBlock { Text = Strings.SwitchHint, Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] },
+                    choices,
                 },
             },
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
-            return;
-
-        var removedSources = Selected(sourceList).Select(i => _sources[i]).ToList();
-        foreach (var i in Selected(hiddenList))
-            _state.HiddenGroups.Remove(hidden[i]);
-        _state.Save();
-
-        if (removedSources.Count == 0)
+        // Closing the dialog with Esc keeps the preselected source.
+        await dialog.ShowAsync();
+        if (choices.SelectedIndex >= 0)
         {
-            RefreshGroups();
-            return;
+            _state.ActiveSource = _sources[choices.SelectedIndex].Id;
+            _state.Save();
         }
-        foreach (var source in removedSources)
-            ChannelCache.Delete(source.Id);
-        _sources.RemoveAll(removedSources.Contains);
-        SourceStore.Save(_sources);
+    }
+
+    private void RefreshSourcePicker()
+    {
+        _refreshingSources = true;
+        SourcePicker.ItemsSource = _sources.Select(s => s.Name).ToList();
+        SourcePicker.SelectedIndex = Active is { } active ? _sources.IndexOf(active) : -1;
+        SourcePicker.Visibility = _sources.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+        _refreshingSources = false;
+    }
+
+    private async void OnSourcePicked(object sender, SelectionChangedEventArgs e)
+    {
+        if (_refreshingSources || SourcePicker.SelectedIndex < 0 || _sources[SourcePicker.SelectedIndex].Id == Active?.Id)
+            return;
+        await UseSourceAsync(_sources[SourcePicker.SelectedIndex]);
+    }
+
+    private async Task UseSourceAsync(SourceConfig source)
+    {
+        _state.ActiveSource = source.Id;
+        _state.Save();
+        _episodes = null;
+        RefreshSourcePicker();
         await ReloadAsync();
     }
 
-    private static IEnumerable<int> Selected(ListView list)
-        => list.SelectedRanges.SelectMany(r => Enumerable.Range(r.FirstIndex, (int)r.Length));
+    private async Task RemoveSourceAsync(SourceConfig source)
+    {
+        var wasActive = source.Id == Active?.Id;
+        ChannelCache.Delete(source.Id);
+        _sources.Remove(source);
+        SourceStore.Save(_sources);
+        RefreshSourcePicker();
+        if (wasActive)
+            await ReloadAsync();
+    }
+
+    private void Restart()
+    {
+        SaveResume();
+        _state.Save(); // before the new instance reads it
+        if (Environment.ProcessPath is { } exe)
+            System.Diagnostics.Process.Start(exe);
+        Close();
+    }
 
     private void ShowStatus(InfoBarSeverity severity, string message)
     {

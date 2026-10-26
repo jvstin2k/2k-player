@@ -46,6 +46,17 @@ internal static class CrashLog
     }
 }
 
+/// <summary>Writes a file so it holds either the old or the new content, never an empty or half-written one.</summary>
+internal static class AtomicFile
+{
+    public static void WriteAllText(string path, string contents)
+    {
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, contents);
+        File.Move(temp, path, overwrite: true);
+    }
+}
+
 /// <summary>Per-user choices that outlive a session: favorites, hidden groups, resume positions, watched titles, volume and the source in use.</summary>
 internal sealed class AppState
 {
@@ -80,7 +91,7 @@ internal sealed class AppState
         }
     }
 
-    public void Save() => File.WriteAllText(FilePath, JsonSerializer.Serialize(this));
+    public void Save() => AtomicFile.WriteAllText(FilePath, JsonSerializer.Serialize(this));
 }
 
 /// <summary>Last known channel lists and XMLTV files per source, so the app is usable before the provider answers.</summary>
@@ -105,8 +116,10 @@ internal static class ChannelCache
 
     public static void Save(Guid sourceId, PlaylistResult playlist)
     {
-        using var stream = File.Create(ChannelsPath(sourceId));
-        JsonSerializer.Serialize(stream, playlist);
+        var path = ChannelsPath(sourceId);
+        using (var stream = File.Create(path + ".tmp"))
+            JsonSerializer.Serialize(stream, playlist);
+        File.Move(path + ".tmp", path, overwrite: true);
     }
 
     public static void Delete(Guid sourceId)

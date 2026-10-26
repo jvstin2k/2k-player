@@ -22,7 +22,25 @@ internal static class SourceStore
     {
         if (!File.Exists(FilePath))
             return [];
-        var stored = JsonSerializer.Deserialize<List<SourceConfig>>(File.ReadAllText(FilePath)) ?? [];
+        List<SourceConfig> stored;
+        try
+        {
+            stored = JsonSerializer.Deserialize<List<SourceConfig>>(File.ReadAllText(FilePath)) ?? [];
+        }
+        catch (JsonException ex)
+        {
+            // An empty or cut-off file, e.g. after a crash while saving. Starting without sources beats not starting;
+            // the old file stays next to it for a look.
+            CrashLog.Write(ex);
+            try
+            {
+                File.Move(FilePath, FilePath + ".broken", overwrite: true);
+            }
+            catch (IOException)
+            {
+            }
+            return [];
+        }
         if (OpenVault() is not { } vault)
             return stored;
         var migrate = false;
@@ -60,7 +78,7 @@ internal static class SourceStore
             // Without the locker the secrets stay in the file rather than being lost.
             CrashLog.Write(ex);
         }
-        File.WriteAllText(FilePath, JsonSerializer.Serialize(toFile, new JsonSerializerOptions { WriteIndented = true }));
+        AtomicFile.WriteAllText(FilePath, JsonSerializer.Serialize(toFile, new JsonSerializerOptions { WriteIndented = true }));
     }
 
     private static PasswordVault? OpenVault()

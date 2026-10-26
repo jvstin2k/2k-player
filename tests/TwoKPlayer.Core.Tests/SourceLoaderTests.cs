@@ -49,6 +49,29 @@ public class SourceLoaderTests
         finally
         {
             File.Delete(file);
+            File.Delete(file + ".url");
+        }
+    }
+
+    [Fact]
+    public async Task EpgCacheDownloadsAgainWhenTheLinkChanges()
+    {
+        var downloads = 0;
+        var loader = new SourceLoader(new HttpClient(new CountingHandler(() => downloads++)));
+        var playlist = new PlaylistResult([], ["http://provider.example/xmltv.php"]);
+        var file = Path.Combine(Path.GetTempPath(), $"2k-epg-{Guid.NewGuid():N}.xml");
+        try
+        {
+            Assert.True(await loader.UpdateEpgCacheAsync(new SourceConfig { Name = "x" }, playlist, file, TimeSpan.FromHours(12)));
+            var own = new SourceConfig { Name = "x", EpgUrl = "http://epg.example/guide.xml.gz" };
+            Assert.True(await loader.UpdateEpgCacheAsync(own, playlist, file, TimeSpan.FromHours(12)));
+            Assert.False(await loader.UpdateEpgCacheAsync(own, playlist, file, TimeSpan.FromHours(12)));
+            Assert.Equal(2, downloads);
+        }
+        finally
+        {
+            File.Delete(file);
+            File.Delete(file + ".url");
         }
     }
 

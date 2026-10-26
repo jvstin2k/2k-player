@@ -66,6 +66,9 @@ public sealed partial class MainWindow : Window
     private readonly AppState _state = AppState.Load();
     private readonly List<Channel> _channels = [];
     private readonly Dictionary<Guid, EpgGuide> _guides = [];
+    /// <summary>Why a source has no guide, shown above the TV guide.</summary>
+    private readonly Dictionary<Guid, string> _epgErrors = [];
+    private bool _epgLoading;
     private readonly MpvPlayer? _player;
     private readonly Updater _updater = new();
     private readonly string? _playerError;
@@ -257,6 +260,8 @@ public sealed partial class MainWindow : Window
         List<SourceConfig> sources = Active is { } active ? [active] : [];
         _channels.Clear();
         _guides.Clear();
+        _epgErrors.Clear();
+        _epgLoading = true;
         if (sources.Count == 0)
         {
             ShowStatus(InfoBarSeverity.Informational, Strings.NoSourceYet);
@@ -306,7 +311,7 @@ public sealed partial class MainWindow : Window
             errors.Count > 0 ? string.Join("\n", errors)
                 : Strings.Loaded(Count(MediaKind.Live), Count(MediaKind.Movie), Count(MediaKind.Series)));
 
-        // 3. EPG: download only when the cached file is missing or older than EpgMaxAge.
+        // 3. EPG: download only when the cached file is missing, older than EpgMaxAge or from another URL.
         foreach (var (source, playlist, error) in results)
         {
             if (error is not null)
@@ -315,15 +320,22 @@ public sealed partial class MainWindow : Window
             {
                 var path = ChannelCache.EpgPath(source.Id);
                 if (await Task.Run(() => _loader.UpdateEpgCacheAsync(source, playlist, path, EpgMaxAge)) || !_guides.ContainsKey(source.Id))
+                {
+                    _guides.Remove(source.Id);
+                    _epgErrors.Remove(source.Id);
                     await LoadCachedEpgAsync(source);
+                }
             }
             catch (Exception ex)
             {
-                errors.Add($"EPG {source.Name}: {ex.Message}");
+                _epgErrors[source.Id] = Strings.EpgFailed(ex.Message);
             }
+            if (_epgErrors.TryGetValue(source.Id, out var epgError))
+                errors.Add($"{source.Name}: {epgError}");
         }
         if (version != _reloadVersion)
             return;
+        _epgLoading = false;
 
         RefreshChannels();
         if (errors.Count > 0)
@@ -341,9 +353,12 @@ public sealed partial class MainWindow : Window
         {
             _guides[source.Id] = await Task.Run(() => SourceLoader.LoadEpgFileAsync(path));
         }
-        catch (Exception ex) when (ex is IOException or System.Xml.XmlException or InvalidDataException)
+        catch (Exception ex) when (ex is IOException or System.Xml.XmlException or InvalidDataException or EpgFormatException)
         {
-            File.Delete(path); // broken cache file; the next refresh downloads a new one
+            // Broken cache file; the next refresh downloads a new one.
+            File.Delete(path);
+            File.Delete(path + ".url");
+            _epgErrors[source.Id] = ex is EpgFormatException format ? Strings.EpgFormat(format.Error) : Strings.EpgFailed(ex.Message);
         }
     }
 
@@ -513,6 +528,27 @@ public sealed partial class MainWindow : Window
         }
         NowLine.Margin = new Thickness(GuideNameWidth + (now - start).TotalMinutes * GuidePxPerMinute, 0, 0, 0);
         GuideList.ItemsSource = channels.Select(c => new GuideRow(c, GuideFor(c), start, end, GuidePxPerMinute, now)).ToList();
+        ShowGuideNotice(channels, now);
+    }
+
+    /// <summary>Explains an empty or partly empty guide instead of leaving the user with blank rows.</summary>
+    private void ShowGuideNotice(List<Channel> channels, DateTimeOffset now)
+    {
+        string? message = null;
+        var severity = InfoBarSeverity.Warning;
+        if (Active is { } source)
+        {
+            if (_epgErrors.TryGetValue(source.Id, out var error))
+                (message, severity) = (error, InfoBarSeverity.Error);
+            else if (!_guides.TryGetValue(source.Id, out var guide))
+                (message, severity) = _epgLoading ? (Strings.EpgLoading, InfoBarSeverity.Informational) : (Strings.NoEpg, InfoBarSeverity.Warning);
+            else
+                message = Strings.EpgProblem(guide.Diagnose(channels, now));
+        }
+
+        GuideInfo.Severity = severity;
+        GuideInfo.Message = message ?? "";
+        GuideInfo.IsOpen = message is not null;
     }
 
     private void OnSectionChanged(object sender, SelectionChangedEventArgs e)

@@ -59,6 +59,55 @@ public class XmlTvParserTests
     }
 
     [Theory]
+    [InlineData("DE: ZDF HD", null)]
+    [InlineData("ZDF", "zdf")]
+    [InlineData("|DE| ZDF FHD", "ZDF.DE")]
+    public async Task MatchesLooseNamesAndIds(string name, string? tvgId)
+    {
+        var guide = await XmlTvParser.ParseAsync(ToStream(Xml, gzip: false));
+
+        Assert.Equal(3, guide.For(new Channel { Id = "1", Name = name, StreamUrl = "x", EpgId = tvgId }).Count);
+    }
+
+    [Theory]
+    [InlineData("DE: Das Erste HD", "daserste")]
+    [InlineData("DasErste.de", "daserste")]
+    [InlineData("CNN.us", "cnn")]
+    [InlineData("[US] CNN 4K", "cnn")]
+    [InlineData("ProSieben", "prosieben")]
+    public void KeyDropsCountryAndQuality(string text, string key)
+        => Assert.Equal(key, EpgGuide.Key(text));
+
+    [Fact]
+    public async Task DiagnosesWhyTheGuideIsEmpty()
+    {
+        var guide = await XmlTvParser.ParseAsync(ToStream(Xml, gzip: false));
+        var zdf = new Channel { Id = "1", Name = "ZDF", StreamUrl = "x", EpgId = "zdf.de" };
+        var cnn = new Channel { Id = "2", Name = "CNN", StreamUrl = "x", EpgId = "CNN.us" };
+        var during = new DateTimeOffset(2026, 10, 21, 17, 5, 0, TimeSpan.Zero);
+
+        Assert.Equal(EpgProblem.None, guide.Diagnose([zdf, cnn], during).Problem);
+        var foreign = guide.Diagnose([cnn], during);
+        Assert.Equal(EpgProblem.NoMatchingChannels, foreign.Problem);
+        Assert.Equal(["CNN.us"], foreign.ChannelIdSamples);
+        Assert.Equal(["zdf.de"], foreign.EpgIdSamples);
+        Assert.Equal(EpgProblem.OutOfRange, guide.Diagnose([zdf], during.AddDays(3)).Problem);
+        Assert.Equal(EpgProblem.NoProgrammes, (await XmlTvParser.ParseAsync(ToStream("<tv></tv>", gzip: false))).Diagnose([zdf], during).Problem);
+    }
+
+    [Theory]
+    [InlineData("<!DOCTYPE html><html><body>Download</body></html>", EpgFormatError.Html)]
+    [InlineData("<html><head></head></html>", EpgFormatError.Html)]
+    [InlineData("<?xml version=\"1.0\"?><rss><channel /></rss>", EpgFormatError.NotXmlTv)]
+    public async Task RejectsWhatIsNotXmlTv(string content, EpgFormatError error)
+    {
+        var ex = await Assert.ThrowsAsync<EpgFormatException>(() => XmlTvParser.ParseAsync(ToStream(content, gzip: true)));
+        Assert.Equal(error, ex.Error);
+        if (error != EpgFormatError.NotXmlTv)
+            Assert.Equal(error, (await Assert.ThrowsAsync<EpgFormatException>(() => XmlTvParser.ParseAsync(ToStream(content, gzip: false)))).Error);
+    }
+
+    [Theory]
     [InlineData("20261021190000 +0200", "2026-10-21T17:00:00Z")]
     [InlineData("20261021190000 -0130", "2026-10-21T20:30:00Z")]
     [InlineData("20261021190000", "2026-10-21T19:00:00Z")]

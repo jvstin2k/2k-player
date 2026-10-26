@@ -113,8 +113,8 @@ internal sealed partial class MpvPlayer : IDisposable
     }
 
     // libmpv disables its embedded window, so the mouse goes to this one instead. As a "Static" window it answered
-    // WM_NCHITTEST with HTTRANSPARENT, passing the mouse on to the main window below, which apparently sets no cursor: the busy
-    // cursor from app start stayed over the video. Claiming the hit test makes WM_SETCURSOR come here.
+    // WM_NCHITTEST with HTTRANSPARENT, passing the mouse on to the main window below, which apparently sets no
+    // cursor: the busy cursor from app start stayed over the video. Claiming the hit test brings WM_SETCURSOR here.
     [UnmanagedCallersOnly]
     private static nint VideoWindowProc(nint hwnd, uint message, nint wParam, nint lParam)
     {

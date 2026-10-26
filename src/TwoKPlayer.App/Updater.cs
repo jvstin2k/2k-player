@@ -4,6 +4,14 @@ using Velopack.Sources;
 
 namespace TwoKPlayer.App;
 
+internal enum UpdateCheck
+{
+    NotInstalled,
+    UpToDate,
+    Available,
+    Failed,
+}
+
 /// <summary>
 /// Self-update from the public release repo, which the GitHub Actions workflow fills on every merge to main.
 /// Nothing installs without a click: CheckAsync only looks, InstallAsync downloads and restarts.
@@ -18,20 +26,38 @@ internal sealed class Updater
     private readonly UpdateManager _manager = new(new GithubSource(ReleasesRepo, null, false));
     private UpdateInfo? _available;
 
-    /// <summary>The newer version's number, or null when up to date, offline or not installed.</summary>
-    public async Task<string?> CheckAsync()
+    /// <summary>Whether this copy was installed with Setup.exe; only those update themselves.</summary>
+    public bool IsInstalled => _manager.IsInstalled;
+
+    /// <summary>The running version, as the release it came from or, for self-built copies, the build's own number.</summary>
+    public string CurrentVersion
+    {
+        get
+        {
+            if (_manager.IsInstalled && _manager.CurrentVersion is { } installed)
+                return installed.ToString();
+            var build = typeof(Updater).Assembly.GetName().Version;
+            return build is null ? "?" : $"{build.Major}.{build.Minor}.{build.Build}";
+        }
+    }
+
+    /// <summary>The newer version found by the last CheckAsync, or null.</summary>
+    public string? AvailableVersion => _available?.TargetFullRelease.Version.ToString();
+
+    /// <summary>Looks for a newer release. Run at every start and from the settings.</summary>
+    public async Task<UpdateCheck> CheckAsync()
     {
         if (!_manager.IsInstalled)
-            return null;
+            return UpdateCheck.NotInstalled;
         try
         {
             _available = await _manager.CheckForUpdatesAsync();
-            return _available?.TargetFullRelease.Version.ToString();
+            return _available is null ? UpdateCheck.UpToDate : UpdateCheck.Available;
         }
         catch (Exception ex)
         {
             CrashLog.Write(ex); // offline or GitHub unreachable: try again next start
-            return null;
+            return UpdateCheck.Failed;
         }
     }
 

@@ -152,7 +152,7 @@
                             <TextBlock Text="{x:Bind local:Strings.AddSource}" />
                         </StackPanel>
                     </Button>
-                    <Button Grid.Row="1" Grid.Column="1" Click="OnManageSources" ToolTipService.ToolTip="{x:Bind local:Strings.SettingsTip}">
+                    <Button Grid.Row="1" Grid.Column="1" Click="OnOpenSettings" ToolTipService.ToolTip="{x:Bind local:Strings.Settings}">
                         <FontIcon Glyph="&#xE713;" FontSize="14" />
                     </Button>
                 </Grid>
@@ -418,6 +418,63 @@
                         <Rectangle x:Name="NowLine" Grid.RowSpan="2" Width="2" HorizontalAlignment="Left" IsHitTestVisible="False"
                                    Fill="{ThemeResource AccentFillColorDefaultBrush}" />
                     </Grid>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+
+        <!-- Settings: replaces the main view while open, see MainWindow.Settings.cs -->
+        <Grid x:Name="SettingsPanel" Grid.Row="1" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="248" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Padding="12,4,8,12" Spacing="8">
+                <Button Click="OnCloseSettings" Background="Transparent" BorderThickness="0" Padding="10,6"
+                        ToolTipService.ToolTip="{x:Bind local:Strings.BackEsc}">
+                    <StackPanel Orientation="Horizontal" Spacing="14">
+                        <FontIcon Glyph="&#xE72B;" FontSize="16" />
+                        <TextBlock Text="{x:Bind local:Strings.Settings}" Style="{StaticResource SubtitleTextBlockStyle}" />
+                    </StackPanel>
+                </Button>
+                <!-- Same order as MainWindow.SettingsCategory -->
+                <ListView x:Name="SettingsNav" SelectionChanged="OnSettingsCategoryChanged">
+                    <ListViewItem>
+                        <StackPanel Orientation="Horizontal" Spacing="14">
+                            <FontIcon Glyph="&#xE713;" FontSize="16" />
+                            <TextBlock Text="{x:Bind local:Strings.General}" />
+                        </StackPanel>
+                    </ListViewItem>
+                    <ListViewItem>
+                        <StackPanel Orientation="Horizontal" Spacing="14">
+                            <FontIcon Glyph="&#xE774;" FontSize="16" />
+                            <TextBlock Text="{x:Bind local:Strings.Sources}" />
+                        </StackPanel>
+                    </ListViewItem>
+                    <ListViewItem>
+                        <StackPanel Orientation="Horizontal" Spacing="14">
+                            <FontIcon Glyph="&#xED1A;" FontSize="16" />
+                            <TextBlock Text="{x:Bind local:Strings.HiddenChannels}" />
+                        </StackPanel>
+                    </ListViewItem>
+                    <ListViewItem>
+                        <StackPanel Orientation="Horizontal" Spacing="14">
+                            <FontIcon Glyph="&#xE946;" FontSize="16" />
+                            <TextBlock Text="{x:Bind local:Strings.About}" />
+                        </StackPanel>
+                    </ListViewItem>
+                </ListView>
+            </StackPanel>
+
+            <Grid Grid.Column="1" Margin="0,0,12,12" CornerRadius="12"
+                  Background="{ThemeResource LayerFillColorDefaultBrush}"
+                  BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <ScrollViewer x:Name="SettingsScroller">
+                    <StackPanel MaxWidth="860" Padding="32,24,32,32" Spacing="8">
+                        <TextBlock x:Name="SettingsTitle" Style="{StaticResource TitleTextBlockStyle}" Margin="0,0,0,12" />
+                        <!-- Filled per category by ShowSettingsCategory -->
+                        <StackPanel x:Name="SettingsContent" Spacing="8" />
+                    </StackPanel>
                 </ScrollViewer>
             </Grid>
         </Grid>

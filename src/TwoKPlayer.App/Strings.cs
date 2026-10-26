@@ -47,7 +47,6 @@ public static class Strings
     public static string SourcePickerTip => T("Which source is used", "Welche Quelle verwendet wird");
     public static string SearchPlaceholder => T("Search channels or shows", "Sender oder Sendung suchen");
     public static string AddSource => T("Add source", "Quelle hinzufügen");
-    public static string SettingsTip => T("Edit or remove sources, hidden groups, language", "Quellen bearbeiten oder entfernen, ausgeblendete Gruppen, Sprache");
     public static string UpdateKeepsTip => T("Sources, favorites and settings are kept", "Quellen, Favoriten und Einstellungen bleiben erhalten");
 
     // ---------------------------------------------------------------- player
@@ -141,13 +140,53 @@ public static class Strings
     public static string Use => T("Use", "Verwenden");
     public static string SwitchHint => T("You can switch any time at the top of the sidebar.", "Wechseln geht jederzeit oben in der Seitenleiste.");
 
+    // ---------------------------------------------------------------- settings
+
     public static string Settings => T("Settings", "Einstellungen");
-    public static string RemoveOrShow => T("Remove or unhide selected", "Markierte entfernen bzw. einblenden");
+    public static string BackEsc => T("Back (Esc)", "Zurück (Esc)");
+    public static string General => T("General", "Allgemein");
     public static string Sources => T("Sources", "Quellen");
-    public static string NoSources => T("No sources.", "Keine Quellen vorhanden.");
-    public static string HiddenGroups => T("Hidden groups", "Ausgeblendete Gruppen");
-    public static string NoHiddenGroups => T("None. Right-click a group to hide it.", "Keine. Rechtsklick auf eine Gruppe blendet sie aus.");
+    public static string HiddenChannels => T("Hidden channels", "Ausgeblendete Sender");
+    public static string About => T("About", "Info");
+
     public static string LanguageHeader => T("Language", "Sprache");
+    public static string LanguageDescription => T("Language of menus and messages", "Sprache von Menüs und Meldungen");
     public static string RestartForLanguage => T("The new language shows after a restart.", "Die neue Sprache erscheint nach einem Neustart.");
     public static string RestartNow => T("Restart now", "Jetzt neu starten");
+
+    public static string Updates => "Updates";
+    public static string VersionLabel(string version) => $"Version {version}";
+    public static string SelfBuilt(string version) => T($"Version {version} (self-built)", $"Version {version} (selbst gebaut)");
+    public static string CheckForUpdates => T("Check for updates", "Auf Update prüfen");
+    public static string CheckingForUpdates => T("Checking for updates …", "Suche nach Updates …");
+    public static string UpToDate => T("You have the latest version.", "Du hast die neueste Version.");
+    public static string UpdateCheckFailed => T("Could not check for updates. Check the internet connection and try again.",
+        "Updates konnten nicht geprüft werden. Prüfe die Internetverbindung und versuche es erneut.");
+    public static string UpdatesOnlyInstalled => T("Only the version installed with Setup.exe updates itself.",
+        "Nur die mit Setup.exe installierte Version aktualisiert sich selbst.");
+
+    public static string SourcesDescription => T("M3U playlists and Xtream accounts. One source is used at a time.",
+        "M3U-Playlists und Xtream-Zugänge. Es wird immer eine Quelle verwendet.");
+    public static string NoSources => T("No sources yet.", "Noch keine Quellen.");
+    public static string InUse => T("In use", "In Verwendung");
+    public static string Remove => T("Remove", "Entfernen");
+    public static string RemoveSourceQuestion(string name) => T($"Remove \"{name}\"? Its login and saved channel list are deleted.",
+        $"\"{name}\" entfernen? Zugangsdaten und gespeicherte Senderliste werden gelöscht.");
+
+    public static string HiddenDescription => T("Categories hidden with a right-click in the sidebar. Their channels are left out of \"All\" and the TV Guide.",
+        "Kategorien, die per Rechtsklick in der Seitenleiste ausgeblendet wurden. Ihre Sender fehlen unter \"Alle\" und im TV-Guide.");
+    public static string NoHiddenGroups => T("Nothing hidden. Right-click a category in the sidebar to hide it.",
+        "Nichts ausgeblendet. Rechtsklick auf eine Kategorie in der Seitenleiste blendet sie aus.");
+    public static string Unhide => T("Show again", "Wieder einblenden");
+    public static string UnhideAll => T("Show all again", "Alle wieder einblenden");
+
+    public static string AppDescription => T("IPTV player for M3U playlists, Xtream Codes and XMLTV guides.",
+        "IPTV-Player für M3U-Playlists, Xtream Codes und XMLTV-Programmführer.");
+    public static string License => T("Free software under GPL-3.0-or-later. 2k-Player does not include any channels.",
+        "Freie Software unter GPL-3.0-or-later. 2k-Player enthält keine Sender.");
+    public static string SourceCode => T("Source code", "Quellcode");
+    public static string AllReleases => T("All versions and patch notes", "Alle Versionen und Patchnotes");
+    public static string DataFolder => T("Data folder", "Datenordner");
+    public static string DataFolderDescription => T("Settings, cache and crash.log", "Einstellungen, Cache und crash.log");
+    public static string Open => T("Open", "Öffnen");
 }

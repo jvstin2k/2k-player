@@ -169,13 +169,18 @@ public sealed partial class MainWindow : Window
             await PickSourceAsync();
         RefreshSourcePicker();
         await ReloadAsync();
-        if (await _updater.CheckAsync() is not { } version)
+        if (await _updater.CheckAsync() != UpdateCheck.Available || _updater.AvailableVersion is not { } version)
             return;
-        // "Later" keeps the offer as a button at the bottom left; installing always waits for a click.
-        UpdateText.Text = Strings.InstallUpdate(version);
-        UpdateButton.Visibility = Visibility.Visible;
+        OfferUpdate(version);
         if (await AskToUpdateAsync(version))
             await InstallUpdateAsync();
+    }
+
+    /// <summary>"Later" keeps the offer as a button at the bottom left; installing always waits for a click.</summary>
+    private void OfferUpdate(string version)
+    {
+        UpdateText.Text = Strings.InstallUpdate(version);
+        UpdateButton.Visibility = Visibility.Visible;
     }
 
     private async Task<bool> AskToUpdateAsync(string version)
@@ -228,6 +233,7 @@ public sealed partial class MainWindow : Window
 
     private async void OnUpdate(object sender, RoutedEventArgs e) => await InstallUpdateAsync();
 
+    /// <summary>Restarts into the new version; returns only when that failed.</summary>
     private async Task InstallUpdateAsync()
     {
         UpdateButton.IsEnabled = false;
@@ -377,14 +383,14 @@ public sealed partial class MainWindow : Window
     private string HiddenKey(string group)
         => $"{SectionKeys[(int)(_section == Section.Guide ? Section.Live : _section)]} · {(group == NoGroup ? NoGroupKey : group)}";
 
-    /// <summary>A HiddenKey in the current language, for the settings dialog.</summary>
-    private static string HiddenLabel(string key)
+    /// <summary>A HiddenKey's section and group in the current language, for the settings page.</summary>
+    private static (string Section, string Group) HiddenLabel(string key)
     {
         var parts = key.Split(" · ", 2);
         var section = Array.IndexOf(SectionKeys, parts[0]);
         if (parts.Length < 2 || section < 0)
-            return key;
-        return $"{SectionTitles[section]} · {(parts[1] == NoGroupKey ? NoGroup : parts[1])}";
+            return ("", key);
+        return (SectionTitles[section], parts[1] == NoGroupKey ? NoGroup : parts[1]);
     }
 
     private bool IsHidden(string group) => _state.HiddenGroups.Contains(HiddenKey(group));
@@ -529,7 +535,7 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>Whether the section shows the player; playback goes on in the background elsewhere.</summary>
-    private bool VideoShown => _section is not (Section.Home or Section.Guide) && _playing is not null;
+    private bool VideoShown => _section is not (Section.Home or Section.Guide) && _playing is not null && !SettingsOpen;
 
     private void OnGroupSelected(object sender, SelectionChangedEventArgs e)
     {
@@ -903,6 +909,16 @@ public sealed partial class MainWindow : Window
 
     private void OnPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        // The settings page keeps keys for its own buttons and lists; Esc leaves it.
+        if (SettingsOpen)
+        {
+            if (e.Key == VirtualKey.Escape)
+            {
+                CloseSettings();
+                e.Handled = true;
+            }
+            return;
+        }
         if (e.OriginalSource is TextBox or PasswordBox)
             return;
         // Lists keep their own arrow navigation; selecting a channel there plays it anyway.
@@ -1003,7 +1019,7 @@ public sealed partial class MainWindow : Window
     /// <summary>Normal window, fullscreen, or the mini player: a small always-on-top window with only the video.</summary>
     private void SetMode(ViewMode mode)
     {
-        if (mode == _mode || (_section is (Section.Home or Section.Guide) && mode != ViewMode.Normal))
+        if (mode == _mode || ((_section is (Section.Home or Section.Guide) || SettingsOpen) && mode != ViewMode.Normal))
             return;
         if (_mode == ViewMode.Normal && mode == ViewMode.Mini)
             _restoreBounds = new Windows.Graphics.RectInt32(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
@@ -1136,7 +1152,9 @@ public sealed partial class MainWindow : Window
 
     // ---------------------------------------------------------------- sources and settings
 
-    private async void OnAddSource(object sender, RoutedEventArgs e)
+    private async void OnAddSource(object sender, RoutedEventArgs e) => await AddSourceAsync();
+
+    private async Task AddSourceAsync()
     {
         if (await ShowSourceDialogAsync(null) is not { } source)
             return;
@@ -1245,124 +1263,26 @@ public sealed partial class MainWindow : Window
     {
         if (_refreshingSources || SourcePicker.SelectedIndex < 0 || _sources[SourcePicker.SelectedIndex].Id == Active?.Id)
             return;
-        _state.ActiveSource = _sources[SourcePicker.SelectedIndex].Id;
+        await UseSourceAsync(_sources[SourcePicker.SelectedIndex]);
+    }
+
+    private async Task UseSourceAsync(SourceConfig source)
+    {
+        _state.ActiveSource = source.Id;
         _state.Save();
         _episodes = null;
+        RefreshSourcePicker();
         await ReloadAsync();
     }
 
-    private async void OnManageSources(object sender, RoutedEventArgs e)
+    private async Task RemoveSourceAsync(SourceConfig source)
     {
-        var dialog = new ContentDialog
-        {
-            XamlRoot = Content.XamlRoot,
-            Title = Strings.Settings,
-            PrimaryButtonText = Strings.RemoveOrShow,
-            CloseButtonText = Strings.Close,
-        };
-        // Only one dialog can be open at a time, so editing closes this one and reopens it afterwards.
-        SourceConfig? toEdit = null;
-        var sourceList = new ListView
-        {
-            SelectionMode = ListViewSelectionMode.Multiple,
-            ItemsSource = _sources.Select(source =>
-            {
-                var label = new TextBlock { Text = source.Name, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-                var edit = new Button { Content = new FontIcon { Glyph = "\uE70F", FontSize = 14 }, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0) };
-                ToolTipService.SetToolTip(edit, Strings.Edit);
-                edit.Click += (_, _) =>
-                {
-                    toEdit = source;
-                    dialog.Hide();
-                };
-                Grid.SetColumn(edit, 1);
-                return new Grid
-                {
-                    ColumnSpacing = 8,
-                    ColumnDefinitions = { new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }, new ColumnDefinition { Width = GridLength.Auto } },
-                    Children = { label, edit },
-                };
-            }).ToList(),
-        };
-        var hidden = _state.HiddenGroups.Order(StringComparer.CurrentCultureIgnoreCase).ToList();
-        var hiddenList = new ListView { SelectionMode = ListViewSelectionMode.Multiple, ItemsSource = hidden.ConvertAll(HiddenLabel) };
-
-        // The texts are set once at start, so a new language shows after a restart, offered right here.
-        var restart = false;
-        var languages = new[] { Strings.English, Strings.German };
-        var language = new ComboBox
-        {
-            Header = Strings.LanguageHeader,
-            ItemsSource = new[] { "English", "Deutsch" },
-            SelectedIndex = Array.IndexOf(languages, _state.Language),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Margin = new Thickness(0, 12, 0, 0),
-        };
-        var restartButton = new Button { Content = Strings.RestartNow, Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
-        var restartPanel = new StackPanel
-        {
-            Spacing = 8,
-            Visibility = _state.Language == Strings.Language ? Visibility.Collapsed : Visibility.Visible,
-            Children = { new TextBlock { Text = Strings.RestartForLanguage, TextWrapping = TextWrapping.Wrap, Opacity = 0.7 }, restartButton },
-        };
-        language.SelectionChanged += (_, _) =>
-        {
-            _state.Language = languages[language.SelectedIndex];
-            _state.Save();
-            restartPanel.Visibility = _state.Language == Strings.Language ? Visibility.Collapsed : Visibility.Visible;
-        };
-        restartButton.Click += (_, _) =>
-        {
-            restart = true;
-            dialog.Hide();
-        };
-
-        dialog.Content = new StackPanel
-        {
-            Spacing = 8,
-            Width = 420,
-            Children =
-            {
-                new TextBlock { Text = Strings.Sources, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
-                _sources.Count == 0 ? new TextBlock { Text = Strings.NoSources } : sourceList,
-                new TextBlock { Text = Strings.HiddenGroups, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 12, 0, 0) },
-                hidden.Count == 0 ? new TextBlock { Text = Strings.NoHiddenGroups } : hiddenList,
-                language,
-                restartPanel,
-            },
-        };
-        var result = await dialog.ShowAsync();
-        if (restart)
-        {
-            Restart();
-            return;
-        }
-        if (toEdit is not null)
-        {
-            await EditSourceAsync(toEdit);
-            OnManageSources(sender, e);
-            return;
-        }
-        if (result != ContentDialogResult.Primary)
-            return;
-
-        var removedSources = Selected(sourceList).Select(i => _sources[i]).ToList();
-        foreach (var i in Selected(hiddenList))
-            _state.HiddenGroups.Remove(hidden[i]);
-        _state.Save();
-
-        if (removedSources.Count == 0)
-        {
-            RefreshGroups();
-            return;
-        }
-        var activeRemoved = removedSources.Contains(Active!);
-        foreach (var source in removedSources)
-            ChannelCache.Delete(source.Id);
-        _sources.RemoveAll(removedSources.Contains);
+        var wasActive = source.Id == Active?.Id;
+        ChannelCache.Delete(source.Id);
+        _sources.Remove(source);
         SourceStore.Save(_sources);
         RefreshSourcePicker();
-        if (activeRemoved)
+        if (wasActive)
             await ReloadAsync();
     }
 
@@ -1374,9 +1294,6 @@ public sealed partial class MainWindow : Window
             System.Diagnostics.Process.Start(exe);
         Close();
     }
-
-    private static IEnumerable<int> Selected(ListView list)
-        => list.SelectedRanges.SelectMany(r => Enumerable.Range(r.FirstIndex, (int)r.Length));
 
     private void ShowStatus(InfoBarSeverity severity, string message)
     {

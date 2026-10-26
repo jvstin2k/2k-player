@@ -9,7 +9,8 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
-        UnhandledException += (_, e) => CrashLog.Write(e.Exception);
+        // e.Message carries WinUI's own error text, which the exception alone often lacks.
+        UnhandledException += (_, e) => CrashLog.Write($"{e.Message}{Environment.NewLine}{e.Exception}");
         AppDomain.CurrentDomain.UnhandledException += (_, e) => CrashLog.Write(e.ExceptionObject);
     }
 

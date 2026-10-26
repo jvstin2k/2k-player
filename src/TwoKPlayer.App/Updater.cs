@@ -1,3 +1,4 @@
+using TwoKPlayer.Core.Updates;
 using Velopack;
 using Velopack.Sources;
 
@@ -32,6 +33,21 @@ internal sealed class Updater
             CrashLog.Write(ex); // offline or GitHub unreachable: try again next start
             return null;
         }
+    }
+
+    /// <summary>
+    /// What changed since the installed version, newest first. Skipped versions are included when the feed
+    /// lists them as deltas; otherwise only the newest version's changes are known.
+    /// </summary>
+    public IReadOnlyList<string> Changes()
+    {
+        if (_available is null)
+            return [];
+        return new[] { _available.TargetFullRelease }
+            .Concat(Enumerable.Reverse(_available.DeltasToTarget ?? []))
+            .SelectMany(asset => ReleaseNotes.Changes(asset.NotesMarkdown))
+            .Distinct()
+            .ToList();
     }
 
     /// <summary>Downloads the update found by CheckAsync and restarts into it; false if that failed.</summary>

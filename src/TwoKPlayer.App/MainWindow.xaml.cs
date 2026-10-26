@@ -143,15 +143,66 @@ public sealed partial class MainWindow : Window
     private async Task StartAsync()
     {
         await ReloadAsync();
-        // Only offered; installing waits for a click on the button.
-        if (await _updater.CheckAsync() is { } version)
+        if (await _updater.CheckAsync() is not { } version)
+            return;
+        // "Später" keeps the offer as a button at the bottom left; installing always waits for a click.
+        UpdateText.Text = $"Update {version} installieren";
+        UpdateButton.Visibility = Visibility.Visible;
+        if (await AskToUpdateAsync(version))
+            await InstallUpdateAsync();
+    }
+
+    private async Task<bool> AskToUpdateAsync(string version)
+    {
+        // Not over a playing fullscreen or mini player, and not on top of a dialog the user already opened.
+        if (_mode != ViewMode.Normal || Content.XamlRoot is null || VisualTreeHelper.GetOpenPopupsForXamlRoot(Content.XamlRoot).Count > 0)
+            return false;
+
+        var changes = _updater.Changes();
+        var list = new StackPanel { Spacing = 6 };
+        foreach (var change in changes)
+            list.Children.Add(new TextBlock { Text = "•  " + change, TextWrapping = TextWrapping.Wrap });
+        if (changes.Count == 0)
+            list.Children.Add(new TextBlock { Text = "Keine Patchnotes verfügbar.", Opacity = 0.7 });
+
+        var dialog = new ContentDialog
         {
-            UpdateText.Text = $"Update {version} installieren";
-            UpdateButton.Visibility = Visibility.Visible;
+            XamlRoot = Content.XamlRoot,
+            Title = $"Update {version} verfügbar",
+            PrimaryButtonText = "Jetzt updaten",
+            CloseButtonText = "Später",
+            DefaultButton = ContentDialogButton.Primary,
+            Content = new StackPanel
+            {
+                Spacing = 8,
+                Width = 420,
+                Children =
+                {
+                    new TextBlock { Text = "Neu in dieser Version", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
+                    new ScrollViewer { MaxHeight = 320, Content = list },
+                    new TextBlock
+                    {
+                        Text = "Quellen, Favoriten und Einstellungen bleiben erhalten. Der Player startet danach neu.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.7,
+                        Margin = new Thickness(0, 8, 0, 0),
+                    },
+                },
+            },
+        };
+        try
+        {
+            return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        }
+        catch (COMException)
+        {
+            return false; // another dialog opened in the meantime; the button stays
         }
     }
 
-    private async void OnUpdate(object sender, RoutedEventArgs e)
+    private async void OnUpdate(object sender, RoutedEventArgs e) => await InstallUpdateAsync();
+
+    private async Task InstallUpdateAsync()
     {
         UpdateButton.IsEnabled = false;
         UpdateText.Text = "Update wird geladen …";

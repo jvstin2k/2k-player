@@ -52,6 +52,24 @@ jobs:
           # Without the .pri the app has no XAML resources and Windows kills it at start, before it can log anything.
           if (-not (Test-Path publish/TwoKPlayer.App.pri)) { throw "TwoKPlayer.App.pri is missing from the publish output" }
 
+      - name: Smoke test (fullscreen and cursor)
+        shell: pwsh
+        run: |
+          # Runs the published build like an installed one: plays a test picture, enters and leaves fullscreen and
+          # checks the cursor over the video. See src/TwoKPlayer.App/MainWindow.SmokeTest.cs.
+          $env:TWOKPLAYER_SMOKE_TEST = '1'
+          $app = Start-Process publish/TwoKPlayer.App.exe -PassThru
+          if (-not $app.WaitForExit(90000)) { $app.Kill(); Write-Host 'Timed out' }
+          Remove-Item Env:TWOKPLAYER_SMOKE_TEST
+          $data = Join-Path $env:LOCALAPPDATA '2kPlayer'
+          foreach ($file in 'smoke.log', 'crash.log') {
+            if (Test-Path "$data/$file") { Write-Host "--- $file"; Get-Content "$data/$file" }
+          }
+          # A WinUI fail-fast or a crash in libmpv never reaches crash.log, only the event log.
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 2; StartTime = (Get-Date).AddMinutes(-5) } -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Host "--- event $($_.ProviderName)"; Write-Host $_.Message }
+          if ($app.ExitCode -ne 0) { throw "Smoke test failed, exit code $($app.ExitCode) (0x$('{0:x8}' -f $app.ExitCode))" }
+
       - name: Install vpk
         shell: pwsh
         run: |

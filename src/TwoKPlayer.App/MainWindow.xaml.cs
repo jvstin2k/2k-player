@@ -160,7 +160,7 @@ public sealed partial class MainWindow : Window
         void OnLoaded(object sender, RoutedEventArgs e)
         {
             Root.Loaded -= OnLoaded;
-            _ = StartAsync();
+            _ = IsSmokeTest ? SmokeTestAsync() : StartAsync();
         }
         Root.Loaded += OnLoaded;
     }

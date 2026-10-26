@@ -112,10 +112,14 @@ internal sealed partial class MpvPlayer : IDisposable
         UnhookWindowsHookEx(hook);
     }
 
-    // mpv's window asks its parent (this one) first on WM_SETCURSOR; mpv's own cursor hiding in fullscreen still wins.
+    // libmpv disables its embedded window, so the mouse goes to this one instead. As a "Static" window it answered
+    // WM_NCHITTEST with HTTRANSPARENT, passing the mouse on to the main window below, which apparently sets no
+    // cursor: the busy cursor from app start stayed over the video. Claiming the hit test brings WM_SETCURSOR here.
     [UnmanagedCallersOnly]
     private static nint VideoWindowProc(nint hwnd, uint message, nint wParam, nint lParam)
     {
+        if (message == WM_NCHITTEST)
+            return HTCLIENT;
         if (message == WM_SETCURSOR)
         {
             SetCursor(LoadCursorW(0, IDC_ARROW));
@@ -362,7 +366,8 @@ internal sealed partial class MpvPlayer : IDisposable
     private static partial bool DestroyWindow(nint hwnd);
 
     private const int GWLP_WNDPROC = -4, IDC_ARROW = 32512;
-    private const uint WM_SETCURSOR = 0x0020;
+    private const uint WM_SETCURSOR = 0x0020, WM_NCHITTEST = 0x0084;
+    private const nint HTCLIENT = 1;
 
     [LibraryImport("user32.dll")]
     private static partial nint SetWindowLongPtrW(nint hwnd, int index, nint value);

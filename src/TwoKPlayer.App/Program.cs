@@ -12,6 +12,7 @@ public static class Program
     private static void Main()
     {
         VelopackApp.Build().Run();
+        WinUiErrorLog.Install();
 
         WinRT.ComWrappersSupport.InitializeComWrappers();
         Application.Start(p =>

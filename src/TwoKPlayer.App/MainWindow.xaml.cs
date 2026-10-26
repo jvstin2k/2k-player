@@ -160,7 +160,7 @@ public sealed partial class MainWindow : Window
         void OnLoaded(object sender, RoutedEventArgs e)
         {
             Root.Loaded -= OnLoaded;
-            _ = StartAsync();
+            _ = IsSmokeTest ? SmokeTestAsync() : StartAsync();
         }
         Root.Loaded += OnLoaded;
     }
@@ -1032,7 +1032,26 @@ public sealed partial class MainWindow : Window
 
     private void OnVideoHostSizeChanged(object sender, SizeChangedEventArgs e) => UpdateVideoBounds();
 
+    private bool _boundsQueued;
+
+    /// <summary>
+    /// Moves the video window after the current XAML callback, never inside it. libmpv watches its parent window and,
+    /// on a resize, waits for its own window thread; while waiting, Windows lets queued XAML work run on this thread,
+    /// and WinUI ends the process when that happens inside a layout pass ("Reentrancy was detected", c000027b).
+    /// That crashed leaving fullscreen, where SizeChanged comes from the layout pass.
+    /// </summary>
     private void UpdateVideoBounds()
+    {
+        if (_boundsQueued)
+            return;
+        _boundsQueued = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            _boundsQueued = false;
+            ApplyVideoBounds();
+        });
+    }
+
+    private void ApplyVideoBounds()
     {
         if (_player is null || VideoHost.XamlRoot is null)
             return;

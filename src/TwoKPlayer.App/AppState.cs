@@ -127,8 +127,16 @@ internal static class ChannelCache
 
     public static void Delete(Guid sourceId)
     {
-        File.Delete(ChannelsPath(sourceId));
-        File.Delete(EpgPath(sourceId));
-        File.Delete(EpgPath(sourceId) + ".url");
+        foreach (var path in new[] { ChannelsPath(sourceId), EpgPath(sourceId), EpgPath(sourceId) + ".url" })
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (IOException)
+            {
+                // Still open while the guide of this source loads; a leftover cache file does no harm.
+            }
+        }
     }
 }

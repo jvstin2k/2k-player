@@ -62,7 +62,7 @@ jobs:
           if (-not $app.WaitForExit(90000)) { $app.Kill(); Write-Host 'Timed out' }
           Remove-Item Env:TWOKPLAYER_SMOKE_TEST
           $data = Join-Path $env:LOCALAPPDATA '2kPlayer'
-          foreach ($file in 'smoke.log', 'crash.log') {
+          foreach ($file in 'smoke.log', 'crash.log', 'winui-errors.log') {
             if (Test-Path "$data/$file") { Write-Host "--- $file"; Get-Content "$data/$file" }
           }
           # A WinUI fail-fast or a crash in libmpv never reaches crash.log, only the event log.

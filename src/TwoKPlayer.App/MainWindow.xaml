@@ -67,7 +67,12 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <AutoSuggestBox x:Name="SearchBox" PlaceholderText="Sender oder Sendung suchen" QueryIcon="Find" TextChanged="OnSearchChanged" />
+                <StackPanel Spacing="8">
+                    <!-- Shown only with more than one source, see RefreshSourcePicker -->
+                    <ComboBox x:Name="SourcePicker" HorizontalAlignment="Stretch" Visibility="Collapsed" SelectionChanged="OnSourcePicked"
+                              ToolTipService.ToolTip="Welche Quelle verwendet wird" />
+                    <AutoSuggestBox x:Name="SearchBox" PlaceholderText="Sender oder Sendung suchen" QueryIcon="Find" TextChanged="OnSearchChanged" />
+                </StackPanel>
 
                 <ListView x:Name="SectionList" Grid.Row="1" SelectionChanged="OnSectionChanged">
                     <ListViewItem>
@@ -147,7 +152,7 @@
                             <TextBlock Text="Quelle hinzufügen" />
                         </StackPanel>
                     </Button>
-                    <Button Grid.Row="1" Grid.Column="1" Click="OnManageSources" ToolTipService.ToolTip="Quellen und ausgeblendete Gruppen">
+                    <Button Grid.Row="1" Grid.Column="1" Click="OnManageSources" ToolTipService.ToolTip="Quellen bearbeiten oder entfernen, ausgeblendete Gruppen">
                         <FontIcon Glyph="&#xE713;" FontSize="14" />
                     </Button>
                 </Grid>

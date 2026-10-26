@@ -92,6 +92,15 @@ public sealed partial class MainWindow : Window
     /// <summary>Set while the group list is rebuilt, so its selection events do not reset the view.</summary>
     private bool _refreshingGroups;
 
+    /// <summary>Set while the source picker is rebuilt, so its selection events do not reload.</summary>
+    private bool _refreshingSources;
+
+    /// <summary>Counts reloads, so an older one that is still waiting on its provider stops instead of mixing in its channels.</summary>
+    private int _reloadVersion;
+
+    /// <summary>The source whose channels are shown. Only one at a time, so providers that allow a single connection are not hit twice.</summary>
+    private SourceConfig? Active => _sources.Find(s => s.Id == _state.ActiveSource) ?? _sources.FirstOrDefault();
+
     public MainWindow()
     {
         InitializeComponent();
@@ -138,21 +147,82 @@ public sealed partial class MainWindow : Window
         };
 
         SectionList.SelectedIndex = (int)Section.Home; // nothing plays yet, so the app opens without the player
-        _ = StartAsync();
+        // The source dialog needs the XamlRoot, which exists only once the content is loaded.
+        void OnLoaded(object sender, RoutedEventArgs e)
+        {
+            Root.Loaded -= OnLoaded;
+            _ = StartAsync();
+        }
+        Root.Loaded += OnLoaded;
     }
 
     private async Task StartAsync()
     {
+        // With a single source there is nothing to choose.
+        if (_sources.Count > 1)
+            await PickSourceAsync();
+        RefreshSourcePicker();
         await ReloadAsync();
-        // Only offered; installing waits for a click on the button.
-        if (await _updater.CheckAsync() is { } version)
+        if (await _updater.CheckAsync() is not { } version)
+            return;
+        // "Später" keeps the offer as a button at the bottom left; installing always waits for a click.
+        UpdateText.Text = $"Update {version} installieren";
+        UpdateButton.Visibility = Visibility.Visible;
+        if (await AskToUpdateAsync(version))
+            await InstallUpdateAsync();
+    }
+
+    private async Task<bool> AskToUpdateAsync(string version)
+    {
+        // Not over a playing fullscreen or mini player, and not on top of a dialog the user already opened.
+        if (_mode != ViewMode.Normal || Content.XamlRoot is null || VisualTreeHelper.GetOpenPopupsForXamlRoot(Content.XamlRoot).Count > 0)
+            return false;
+
+        var changes = _updater.Changes();
+        var list = new StackPanel { Spacing = 6 };
+        foreach (var change in changes)
+            list.Children.Add(new TextBlock { Text = "•  " + change, TextWrapping = TextWrapping.Wrap });
+        if (changes.Count == 0)
+            list.Children.Add(new TextBlock { Text = "Keine Patchnotes verfügbar.", Opacity = 0.7 });
+
+        var dialog = new ContentDialog
         {
-            UpdateText.Text = $"Update {version} installieren";
-            UpdateButton.Visibility = Visibility.Visible;
+            XamlRoot = Content.XamlRoot,
+            Title = $"Update {version} verfügbar",
+            PrimaryButtonText = "Jetzt updaten",
+            CloseButtonText = "Später",
+            DefaultButton = ContentDialogButton.Primary,
+            Content = new StackPanel
+            {
+                Spacing = 8,
+                Width = 420,
+                Children =
+                {
+                    new TextBlock { Text = "Neu in dieser Version", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
+                    new ScrollViewer { MaxHeight = 320, Content = list },
+                    new TextBlock
+                    {
+                        Text = "Quellen, Favoriten und Einstellungen bleiben erhalten. Der Player startet danach neu.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.7,
+                        Margin = new Thickness(0, 8, 0, 0),
+                    },
+                },
+            },
+        };
+        try
+        {
+            return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        }
+        catch (COMException)
+        {
+            return false; // another dialog opened in the meantime; the button stays
         }
     }
 
-    private async void OnUpdate(object sender, RoutedEventArgs e)
+    private async void OnUpdate(object sender, RoutedEventArgs e) => await InstallUpdateAsync();
+
+    private async Task InstallUpdateAsync()
     {
         UpdateButton.IsEnabled = false;
         UpdateText.Text = "Update wird geladen …";
@@ -171,9 +241,11 @@ public sealed partial class MainWindow : Window
 
     private async Task ReloadAsync()
     {
+        var version = ++_reloadVersion;
+        List<SourceConfig> sources = Active is { } active ? [active] : [];
         _channels.Clear();
         _guides.Clear();
-        if (_sources.Count == 0)
+        if (sources.Count == 0)
         {
             ShowStatus(InfoBarSeverity.Informational, "Noch keine Quelle. Füge eine M3U-Playlist oder einen Xtream-Zugang hinzu.");
             RefreshGroups();
@@ -181,20 +253,26 @@ public sealed partial class MainWindow : Window
         }
 
         // 1. Last known data first, so the app is usable before any provider answers.
-        var cached = await Task.Run(() => _sources.Select(s => ChannelCache.Load(s.Id)).ToList());
+        var cached = await Task.Run(() => sources.Select(s => ChannelCache.Load(s.Id)).ToList());
+        if (version != _reloadVersion)
+            return;
         foreach (var playlist in cached)
             _channels.AddRange(playlist?.Channels ?? []);
         if (_channels.Count > 0)
         {
             RefreshGroups();
-            foreach (var source in _sources)
+            foreach (var source in sources)
                 await LoadCachedEpgAsync(source);
+            if (version != _reloadVersion)
+                return;
             RefreshChannels();
         }
         ShowStatus(InfoBarSeverity.Informational, "Aktualisiere Sender …");
 
         // 2. Fresh lists from the providers. A source that fails keeps its cached list.
-        var results = await Task.WhenAll(_sources.Select(LoadSafeAsync));
+        var results = await Task.WhenAll(sources.Select(LoadSafeAsync));
+        if (version != _reloadVersion)
+            return;
         var errors = new List<string>();
         _channels.Clear();
         for (var i = 0; i < results.Length; i++)
@@ -232,6 +310,8 @@ public sealed partial class MainWindow : Window
                 errors.Add($"EPG {source.Name}: {ex.Message}");
             }
         }
+        if (version != _reloadVersion)
+            return;
 
         RefreshChannels();
         if (errors.Count > 0)
@@ -1042,68 +1122,174 @@ public sealed partial class MainWindow : Window
 
     private async void OnAddSource(object sender, RoutedEventArgs e)
     {
-        var kind = new ComboBox { Header = "Typ", ItemsSource = new[] { "M3U-Playlist", "Xtream Codes" }, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
-        var name = new TextBox { Header = "Name" };
-        var location = new TextBox { Header = "Playlist-URL oder Datei / Xtream-Server" };
-        var user = new TextBox { Header = "Benutzername (Xtream)" };
-        var pass = new PasswordBox { Header = "Passwort (Xtream)" };
-        var epg = new TextBox { Header = "EPG-URL (optional, XMLTV)" };
+        if (await ShowSourceDialogAsync(null) is not { } source)
+            return;
+        // Adding the same playlist again replaces it.
+        _sources.RemoveAll(s => string.Equals(s.M3uLocation ?? s.Server, source.M3uLocation ?? source.Server, StringComparison.OrdinalIgnoreCase)
+            && s.Username == source.Username);
+        _sources.Add(source);
+        SourceStore.Save(_sources);
+        // Whoever adds a source wants to see it.
+        _state.ActiveSource = source.Id;
+        _state.Save();
+        RefreshSourcePicker();
+        await ReloadAsync();
+    }
+
+    private async Task EditSourceAsync(SourceConfig source)
+    {
+        if (await ShowSourceDialogAsync(source) is not { } edited || edited == source)
+            return;
+        _sources[_sources.IndexOf(source)] = edited;
+        SourceStore.Save(_sources);
+        RefreshSourcePicker();
+        // A new name alone needs no new channel list.
+        if (edited.Id == Active?.Id && edited with { Name = source.Name } != source)
+            await ReloadAsync();
+    }
+
+    /// <summary>Asks for a new source, or for changes to <paramref name="existing"/>. Null when cancelled.</summary>
+    private async Task<SourceConfig?> ShowSourceDialogAsync(SourceConfig? existing)
+    {
+        var wasXtream = existing?.Kind == SourceKind.Xtream;
+        var kind = new ComboBox { Header = "Typ", ItemsSource = new[] { "M3U-Playlist", "Xtream Codes" }, SelectedIndex = wasXtream ? 1 : 0, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var name = new TextBox { Header = "Name", Text = existing?.Name ?? "" };
+        var location = new TextBox { Header = "Playlist-URL oder Datei / Xtream-Server", Text = (wasXtream ? existing?.Server : existing?.M3uLocation) ?? "" };
+        var user = new TextBox { Header = "Benutzername (Xtream)", Text = existing?.Username ?? "" };
+        var pass = new PasswordBox { Header = "Passwort (Xtream)", Password = existing?.Password ?? "" };
+        var epg = new TextBox { Header = "EPG-URL (optional, XMLTV)", Text = existing?.EpgUrl ?? "" };
 
         var dialog = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
-            Title = "Quelle hinzufügen",
-            PrimaryButtonText = "Hinzufügen",
+            Title = existing is null ? "Quelle hinzufügen" : "Quelle bearbeiten",
+            PrimaryButtonText = existing is null ? "Hinzufügen" : "Speichern",
             CloseButtonText = "Abbrechen",
             DefaultButton = ContentDialogButton.Primary,
             Content = new StackPanel { Spacing = 8, Width = 400, Children = { kind, name, location, user, pass, epg } },
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary || string.IsNullOrWhiteSpace(location.Text))
-            return;
+            return null;
 
         var xtream = kind.SelectedIndex == 1;
-        // Adding the same playlist again replaces it; duplicates would hit the provider in parallel.
-        var username = xtream ? user.Text.Trim() : null;
-        _sources.RemoveAll(s => string.Equals(s.M3uLocation ?? s.Server, location.Text.Trim(), StringComparison.OrdinalIgnoreCase) && s.Username == username);
-        _sources.Add(new SourceConfig
+        return new SourceConfig
         {
+            // Keeping the id keeps the cached lists and the place in the locker.
+            Id = existing?.Id ?? Guid.NewGuid(),
             Name = string.IsNullOrWhiteSpace(name.Text) ? location.Text.Trim() : name.Text.Trim(),
             Kind = xtream ? SourceKind.Xtream : SourceKind.M3u,
             M3uLocation = xtream ? null : location.Text.Trim(),
             Server = xtream ? location.Text.Trim() : null,
-            Username = username,
+            Username = xtream ? user.Text.Trim() : null,
             Password = xtream ? pass.Password : null,
             EpgUrl = string.IsNullOrWhiteSpace(epg.Text) ? null : epg.Text.Trim(),
-        });
-        SourceStore.Save(_sources);
+        };
+    }
+
+    /// <summary>Asks which of several sources to use, with the last one used preselected.</summary>
+    private async Task PickSourceAsync()
+    {
+        var choices = new RadioButtons { ItemsSource = _sources.Select(s => s.Name).ToList(), SelectedIndex = Active is { } a ? _sources.IndexOf(a) : 0 };
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = "Welche Quelle verwenden?",
+            PrimaryButtonText = "Verwenden",
+            DefaultButton = ContentDialogButton.Primary,
+            Content = new StackPanel
+            {
+                Spacing = 12,
+                Width = 400,
+                Children =
+                {
+                    new TextBlock { Text = "Wechseln geht jederzeit oben in der Seitenleiste.", Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] },
+                    choices,
+                },
+            },
+        };
+        // Closing the dialog with Esc keeps the preselected source.
+        await dialog.ShowAsync();
+        if (choices.SelectedIndex >= 0)
+        {
+            _state.ActiveSource = _sources[choices.SelectedIndex].Id;
+            _state.Save();
+        }
+    }
+
+    private void RefreshSourcePicker()
+    {
+        _refreshingSources = true;
+        SourcePicker.ItemsSource = _sources.Select(s => s.Name).ToList();
+        SourcePicker.SelectedIndex = Active is { } active ? _sources.IndexOf(active) : -1;
+        SourcePicker.Visibility = _sources.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+        _refreshingSources = false;
+    }
+
+    private async void OnSourcePicked(object sender, SelectionChangedEventArgs e)
+    {
+        if (_refreshingSources || SourcePicker.SelectedIndex < 0 || _sources[SourcePicker.SelectedIndex].Id == Active?.Id)
+            return;
+        _state.ActiveSource = _sources[SourcePicker.SelectedIndex].Id;
+        _state.Save();
+        _episodes = null;
         await ReloadAsync();
     }
 
     private async void OnManageSources(object sender, RoutedEventArgs e)
     {
-        var sourceList = new ListView { SelectionMode = ListViewSelectionMode.Multiple, ItemsSource = _sources.Select(s => s.Name).ToList() };
-        var hidden = _state.HiddenGroups.Order(StringComparer.CurrentCultureIgnoreCase).ToList();
-        var hiddenList = new ListView { SelectionMode = ListViewSelectionMode.Multiple, ItemsSource = hidden };
         var dialog = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
             Title = "Einstellungen",
             PrimaryButtonText = "Markierte entfernen bzw. einblenden",
             CloseButtonText = "Schließen",
-            Content = new StackPanel
+        };
+        // Only one dialog can be open at a time, so editing closes this one and reopens it afterwards.
+        SourceConfig? toEdit = null;
+        var sourceList = new ListView
+        {
+            SelectionMode = ListViewSelectionMode.Multiple,
+            ItemsSource = _sources.Select(source =>
             {
-                Spacing = 8,
-                Width = 420,
-                Children =
+                var label = new TextBlock { Text = source.Name, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+                var edit = new Button { Content = new FontIcon { Glyph = "\uE70F", FontSize = 14 }, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0) };
+                ToolTipService.SetToolTip(edit, "Bearbeiten");
+                edit.Click += (_, _) =>
                 {
-                    new TextBlock { Text = "Quellen", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
-                    _sources.Count == 0 ? new TextBlock { Text = "Keine Quellen vorhanden." } : sourceList,
-                    new TextBlock { Text = "Ausgeblendete Gruppen", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 12, 0, 0) },
-                    hidden.Count == 0 ? new TextBlock { Text = "Keine. Rechtsklick auf eine Gruppe blendet sie aus." } : hiddenList,
-                },
+                    toEdit = source;
+                    dialog.Hide();
+                };
+                Grid.SetColumn(edit, 1);
+                return new Grid
+                {
+                    ColumnSpacing = 8,
+                    ColumnDefinitions = { new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }, new ColumnDefinition { Width = GridLength.Auto } },
+                    Children = { label, edit },
+                };
+            }).ToList(),
+        };
+        var hidden = _state.HiddenGroups.Order(StringComparer.CurrentCultureIgnoreCase).ToList();
+        var hiddenList = new ListView { SelectionMode = ListViewSelectionMode.Multiple, ItemsSource = hidden };
+        dialog.Content = new StackPanel
+        {
+            Spacing = 8,
+            Width = 420,
+            Children =
+            {
+                new TextBlock { Text = "Quellen", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
+                _sources.Count == 0 ? new TextBlock { Text = "Keine Quellen vorhanden." } : sourceList,
+                new TextBlock { Text = "Ausgeblendete Gruppen", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 12, 0, 0) },
+                hidden.Count == 0 ? new TextBlock { Text = "Keine. Rechtsklick auf eine Gruppe blendet sie aus." } : hiddenList,
             },
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        var result = await dialog.ShowAsync();
+        if (toEdit is not null)
+        {
+            await EditSourceAsync(toEdit);
+            OnManageSources(sender, e);
+            return;
+        }
+        if (result != ContentDialogResult.Primary)
             return;
 
         var removedSources = Selected(sourceList).Select(i => _sources[i]).ToList();
@@ -1116,11 +1302,14 @@ public sealed partial class MainWindow : Window
             RefreshGroups();
             return;
         }
+        var activeRemoved = removedSources.Contains(Active!);
         foreach (var source in removedSources)
             ChannelCache.Delete(source.Id);
         _sources.RemoveAll(removedSources.Contains);
         SourceStore.Save(_sources);
-        await ReloadAsync();
+        RefreshSourcePicker();
+        if (activeRemoved)
+            await ReloadAsync();
     }
 
     private static IEnumerable<int> Selected(ListView list)

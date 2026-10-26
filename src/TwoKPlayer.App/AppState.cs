@@ -57,7 +57,7 @@ internal static class AtomicFile
     }
 }
 
-/// <summary>Per-user choices that outlive a session: favorites, hidden groups, resume positions, watched titles, volume and the source in use.</summary>
+/// <summary>Per-user choices that outlive a session: favorites, hidden groups, resume positions, watched titles, volume, the source in use and the language.</summary>
 internal sealed class AppState
 {
     private static readonly string FilePath = Path.Combine(AppPaths.Root, "state.json");
@@ -78,6 +78,9 @@ internal sealed class AppState
 
     /// <summary>The source last chosen, preselected when the app asks which one to use.</summary>
     public Guid? ActiveSource { get; set; }
+
+    /// <summary>"en" or "de", see Strings.</summary>
+    public string Language { get; set; } = Strings.English;
 
     public static AppState Load()
     {

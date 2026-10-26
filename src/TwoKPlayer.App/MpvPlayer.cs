@@ -257,7 +257,7 @@ internal sealed partial class MpvPlayer : IDisposable
             tracks.Add(new MpvTrack(
                 GetProperty($"{p}/type") ?? "",
                 GetProperty($"{p}/id") ?? "",
-                label.Length > 0 ? label : $"Spur {GetProperty($"{p}/id")}",
+                label.Length > 0 ? label : Strings.Track(GetProperty($"{p}/id")),
                 GetProperty($"{p}/selected") == "yes"));
         }
         return tracks;

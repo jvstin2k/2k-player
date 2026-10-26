@@ -33,21 +33,26 @@ public sealed partial class MainWindow : Window
     }
 
     // Label, video-aspect-override, panscan, keepaspect.
-    private static readonly (string Label, string Aspect, string Panscan, string KeepAspect)[] PictureFormats =
+    private static (string Label, string Aspect, string Panscan, string KeepAspect)[] PictureFormats =>
     [
-        ("Original", "no", "0", "yes"),
-        ("Bild füllen (Zoom)", "no", "1", "yes"),
+        (Strings.Original, "no", "0", "yes"),
+        (Strings.FillZoom, "no", "1", "yes"),
         ("16:9", "16:9", "0", "yes"),
         ("4:3", "4:3", "0", "yes"),
-        ("Strecken", "no", "0", "no"),
+        (Strings.Stretch, "no", "0", "no"),
     ];
 
     private const int MaxReconnects = 5;
 
-    private const string AllGroups = "Alle";
-    private const string FavoritesGroup = "★ Favoriten";
-    private const string NoGroup = "Ohne Gruppe";
-    private static readonly string[] SectionTitles = ["Startseite", "Live TV", "Filme", "Serien", "TV-Guide"];
+    // Properties, not fields: they must be read after the constructor has set the language.
+    private static string AllGroups => Strings.AllGroups;
+    private static string FavoritesGroup => Strings.FavoritesGroup;
+    private static string NoGroup => Strings.NoGroup;
+    private static string[] SectionTitles => [Strings.Home, Strings.LiveTv, Strings.Movies, Strings.Series, Strings.Guide];
+
+    // Hidden groups are saved under the German names the app had before it spoke English, so they survive a language switch.
+    private static readonly string[] SectionKeys = ["Startseite", "Live TV", "Filme", "Serien", "TV-Guide"];
+    private const string NoGroupKey = "Ohne Gruppe";
     private static readonly TimeSpan EpgMaxAge = TimeSpan.FromHours(12);
     private const double GuidePxPerMinute = 4, GuideNameWidth = 220;
     private const int GuideHours = 6;
@@ -103,6 +108,7 @@ public sealed partial class MainWindow : Window
 
     public MainWindow()
     {
+        Strings.Language = _state.Language; // before InitializeComponent, whose x:Bind texts read it
         InitializeComponent();
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
@@ -116,11 +122,11 @@ public sealed partial class MainWindow : Window
         }
         catch (DllNotFoundException)
         {
-            _playerError = "libmpv-2.dll fehlt neben TwoKPlayer.App.exe. Bitte scripts/fetch-libmpv.ps1 ausführen und neu bauen.";
+            _playerError = Strings.LibmpvMissing;
         }
         catch (Exception ex) when (ex is BadImageFormatException or EntryPointNotFoundException or InvalidOperationException)
         {
-            _playerError = $"Player konnte nicht starten: {ex.Message}";
+            _playerError = Strings.PlayerFailed(ex.Message);
         }
 
         if (_player is not null)
@@ -165,8 +171,8 @@ public sealed partial class MainWindow : Window
         await ReloadAsync();
         if (await _updater.CheckAsync() is not { } version)
             return;
-        // "Später" keeps the offer as a button at the bottom left; installing always waits for a click.
-        UpdateText.Text = $"Update {version} installieren";
+        // "Later" keeps the offer as a button at the bottom left; installing always waits for a click.
+        UpdateText.Text = Strings.InstallUpdate(version);
         UpdateButton.Visibility = Visibility.Visible;
         if (await AskToUpdateAsync(version))
             await InstallUpdateAsync();
@@ -183,14 +189,14 @@ public sealed partial class MainWindow : Window
         foreach (var change in changes)
             list.Children.Add(new TextBlock { Text = "•  " + change, TextWrapping = TextWrapping.Wrap });
         if (changes.Count == 0)
-            list.Children.Add(new TextBlock { Text = "Keine Patchnotes verfügbar.", Opacity = 0.7 });
+            list.Children.Add(new TextBlock { Text = Strings.NoPatchNotes, Opacity = 0.7 });
 
         var dialog = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
-            Title = $"Update {version} verfügbar",
-            PrimaryButtonText = "Jetzt updaten",
-            CloseButtonText = "Später",
+            Title = Strings.UpdateAvailable(version),
+            PrimaryButtonText = Strings.UpdateNow,
+            CloseButtonText = Strings.Later,
             DefaultButton = ContentDialogButton.Primary,
             Content = new StackPanel
             {
@@ -198,11 +204,11 @@ public sealed partial class MainWindow : Window
                 Width = 420,
                 Children =
                 {
-                    new TextBlock { Text = "Neu in dieser Version", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
+                    new TextBlock { Text = Strings.NewInVersion, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
                     new ScrollViewer { MaxHeight = 320, Content = list },
                     new TextBlock
                     {
-                        Text = "Quellen, Favoriten und Einstellungen bleiben erhalten. Der Player startet danach neu.",
+                        Text = Strings.UpdateKeeps,
                         TextWrapping = TextWrapping.Wrap,
                         Opacity = 0.7,
                         Margin = new Thickness(0, 8, 0, 0),
@@ -225,14 +231,14 @@ public sealed partial class MainWindow : Window
     private async Task InstallUpdateAsync()
     {
         UpdateButton.IsEnabled = false;
-        UpdateText.Text = "Update wird geladen …";
+        UpdateText.Text = Strings.UpdateLoading;
         SaveResume();
         _state.Save();
         // Restarts the app when done. Sources, favorites and credentials live outside the install folder.
         if (!await _updater.InstallAsync())
         {
-            ShowStatus(InfoBarSeverity.Error, "Update konnte nicht geladen werden. Bitte später erneut versuchen.");
-            UpdateText.Text = "Update erneut versuchen";
+            ShowStatus(InfoBarSeverity.Error, Strings.UpdateFailed);
+            UpdateText.Text = Strings.UpdateRetry;
             UpdateButton.IsEnabled = true;
         }
     }
@@ -247,7 +253,7 @@ public sealed partial class MainWindow : Window
         _guides.Clear();
         if (sources.Count == 0)
         {
-            ShowStatus(InfoBarSeverity.Informational, "Noch keine Quelle. Füge eine M3U-Playlist oder einen Xtream-Zugang hinzu.");
+            ShowStatus(InfoBarSeverity.Informational, Strings.NoSourceYet);
             RefreshGroups();
             return;
         }
@@ -267,7 +273,7 @@ public sealed partial class MainWindow : Window
                 return;
             RefreshChannels();
         }
-        ShowStatus(InfoBarSeverity.Informational, "Aktualisiere Sender …");
+        ShowStatus(InfoBarSeverity.Informational, Strings.Refreshing);
 
         // 2. Fresh lists from the providers. A source that fails keeps its cached list.
         var results = await Task.WhenAll(sources.Select(LoadSafeAsync));
@@ -292,7 +298,7 @@ public sealed partial class MainWindow : Window
         RefreshGroups();
         ShowStatus(errors.Count > 0 ? InfoBarSeverity.Warning : InfoBarSeverity.Informational,
             errors.Count > 0 ? string.Join("\n", errors)
-                : $"{Count(MediaKind.Live)} Sender, {Count(MediaKind.Movie)} Filme, {Count(MediaKind.Series)} Serien. EPG wird aktualisiert …");
+                : Strings.Loaded(Count(MediaKind.Live), Count(MediaKind.Movie), Count(MediaKind.Series)));
 
         // 3. EPG: download only when the cached file is missing or older than EpgMaxAge.
         foreach (var (source, playlist, error) in results)
@@ -345,7 +351,7 @@ public sealed partial class MainWindow : Window
         {
             // 884 is a panel-specific code (Xtream UI/XUI) for blocked or over-limit accounts.
             return (source, new PlaylistResult([], []),
-                $"Zugang abgelehnt (HTTP {(int)ex.StatusCode!}). Prüfe die Zugangsdaten oder ob der Anbieter gerade eine weitere Verbindung erlaubt.");
+                Strings.AccessDenied((int)ex.StatusCode!));
         }
         catch (Exception ex)
         {
@@ -357,7 +363,7 @@ public sealed partial class MainWindow : Window
 
     // ---------------------------------------------------------------- lists
 
-    // M3U playlists list series episodes one by one, so they show up under Serien too.
+    // M3U playlists list series episodes one by one, so they show up under Series too.
     private bool InSection(Channel c) => _section switch
     {
         Section.Movies => c.Kind == MediaKind.Movie,
@@ -368,16 +374,25 @@ public sealed partial class MainWindow : Window
     private static string GroupOf(Channel c) => c.Group ?? NoGroup;
 
     // The guide shows live channels, so it shares Live TV's hidden groups.
-    private string HiddenKey(string group) => $"{SectionTitles[(int)(_section == Section.Guide ? Section.Live : _section)]} · {group}";
+    private string HiddenKey(string group)
+        => $"{SectionKeys[(int)(_section == Section.Guide ? Section.Live : _section)]} · {(group == NoGroup ? NoGroupKey : group)}";
+
+    /// <summary>A HiddenKey in the current language, for the settings dialog.</summary>
+    private static string HiddenLabel(string key)
+    {
+        var parts = key.Split(" · ", 2);
+        var section = Array.IndexOf(SectionKeys, parts[0]);
+        if (parts.Length < 2 || section < 0)
+            return key;
+        return $"{SectionTitles[section]} · {(parts[1] == NoGroupKey ? NoGroup : parts[1])}";
+    }
 
     private bool IsHidden(string group) => _state.HiddenGroups.Contains(HiddenKey(group));
 
-    private bool InGroup(Channel c, string group) => group switch
-    {
-        AllGroups => !IsHidden(GroupOf(c)),
-        FavoritesGroup => _state.Favorites.Contains(c.Id),
-        _ => GroupOf(c) == group,
-    };
+    private bool InGroup(Channel c, string group)
+        => group == AllGroups ? !IsHidden(GroupOf(c))
+            : group == FavoritesGroup ? _state.Favorites.Contains(c.Id)
+            : GroupOf(c) == group;
 
     private EpgGuide GuideFor(Channel c)
         => c.Kind == MediaKind.Live ? _guides.GetValueOrDefault(c.SourceId) ?? EpgGuide.Empty : EpgGuide.Empty;
@@ -431,7 +446,7 @@ public sealed partial class MainWindow : Window
     private void ShowHome(List<(Channel Channel, EpgProgramme? Match)> items, DateTimeOffset now)
     {
         var rows = items.ConvertAll(i => new ChannelRow(i.Channel, GuideFor(i.Channel), now, true, _state.Watched.Contains(i.Channel.Id), i.Match));
-        // M3U playlists list series episodes one by one; those count as series here, as in the Serien section.
+        // M3U playlists list series episodes one by one; those count as series here, as in the Series section.
         Fill(HomeLiveHeader, HomeLive, rows.FindAll(r => r.Channel.Kind == MediaKind.Live));
         Fill(HomeMoviesHeader, HomeMovies, rows.FindAll(r => r.Channel.Kind == MediaKind.Movie));
         Fill(HomeSeriesHeader, HomeSeries, rows.FindAll(r => r.Channel.Kind is MediaKind.Series or MediaKind.Episode));
@@ -550,7 +565,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException)
         {
-            ShowStatus(InfoBarSeverity.Error, $"Episoden von {series.Name}: {ex.Message}");
+            ShowStatus(InfoBarSeverity.Error, Strings.EpisodesFailed(series.Name, ex.Message));
         }
     }
 
@@ -565,7 +580,7 @@ public sealed partial class MainWindow : Window
             _state.Favorites.Remove(row.Channel.Id);
         _state.Save();
 
-        // Only rebuild the lists when the Favoriten group has to appear or disappear.
+        // Only rebuild the lists when the favorites group has to appear or disappear.
         var hasGroup = GroupList.ItemsSource is List<string> groups && groups.Contains(FavoritesGroup);
         if (hasGroup != _channels.Any(c => InSection(c) && _state.Favorites.Contains(c.Id)))
             RefreshGroups();
@@ -573,7 +588,7 @@ public sealed partial class MainWindow : Window
 
     private void OnHideGroup(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is not string group || group is AllGroups or FavoritesGroup)
+        if ((sender as FrameworkElement)?.Tag is not string group || group == AllGroups || group == FavoritesGroup)
             return;
         _state.HiddenGroups.Add(HiddenKey(group));
         _state.Save();
@@ -601,7 +616,7 @@ public sealed partial class MainWindow : Window
         if (_player is null)
         {
             // Shown on click because the startup message is replaced by the loading status.
-            ShowStatus(InfoBarSeverity.Error, _playerError ?? "Player nicht verfügbar.");
+            ShowStatus(InfoBarSeverity.Error, _playerError ?? Strings.PlayerUnavailable);
             return;
         }
 
@@ -614,7 +629,7 @@ public sealed partial class MainWindow : Window
         NowProgramme.Text = current?.Title ?? "";
         NowProgress.Value = current?.Progress(now) ?? 0;
         NowProgress.Visibility = current is null ? Visibility.Collapsed : Visibility.Visible;
-        NextProgramme.Text = next is null ? "" : $"Danach {next.Start.ToLocalTime():HH:mm}  {next.Title}";
+        NextProgramme.Text = next is null ? "" : Strings.Next($"{next.Start.ToLocalTime():HH:mm}", next.Title);
 
         try
         {
@@ -626,7 +641,7 @@ public sealed partial class MainWindow : Window
             _reconnects = 0;
             SetPaused(false);
             if (resume > 0)
-                ShowStatus(InfoBarSeverity.Informational, $"Weiter ab {TimeSpan.FromSeconds(resume):h\\:mm\\:ss}");
+                ShowStatus(InfoBarSeverity.Informational, Strings.ResumingAt($"{TimeSpan.FromSeconds(resume):h\\:mm\\:ss}"));
 
             LiveButton.Visibility = live ? Visibility.Visible : Visibility.Collapsed;
             SeekBackButton.Visibility = SeekForwardButton.Visibility = live ? Visibility.Collapsed : Visibility.Visible;
@@ -662,7 +677,7 @@ public sealed partial class MainWindow : Window
     {
         _lastStart = DateTime.UtcNow;
         if (_reconnects > 0)
-            StatusBar.IsOpen = false; // the "verbinde neu" message
+            StatusBar.IsOpen = false; // the "reconnecting" message
     }
 
     private async void OnPlaybackEnded(string? error)
@@ -680,11 +695,11 @@ public sealed partial class MainWindow : Window
             }
             if (_reconnects >= MaxReconnects)
             {
-                ShowStatus(InfoBarSeverity.Error, $"{channel.Name}: Verbindung verloren{(error is null ? "" : $" ({error})")}. Drück LIVE für einen neuen Versuch.");
+                ShowStatus(InfoBarSeverity.Error, Strings.ConnectionLost(channel.Name, error));
                 return;
             }
             _reconnects++;
-            ShowStatus(InfoBarSeverity.Warning, $"Verbindung unterbrochen, verbinde neu ({_reconnects}/{MaxReconnects}) …");
+            ShowStatus(InfoBarSeverity.Warning, Strings.Reconnecting(_reconnects, MaxReconnects));
             await Task.Delay(TimeSpan.FromSeconds(2 * _reconnects));
             if (_playing == channel)
             {
@@ -696,7 +711,7 @@ public sealed partial class MainWindow : Window
 
         if (error is not null)
         {
-            ShowStatus(InfoBarSeverity.Error, $"Wiedergabe fehlgeschlagen: {error}");
+            ShowStatus(InfoBarSeverity.Error, Strings.PlaybackFailed(error));
             return;
         }
 
@@ -707,7 +722,7 @@ public sealed partial class MainWindow : Window
         if (channel.Kind == MediaKind.Episode && index >= 0 && index + 1 < _playQueue.Count && _playQueue[index + 1].Kind == MediaKind.Episode)
         {
             var next = _playQueue[index + 1];
-            ShowStatus(InfoBarSeverity.Informational, $"Nächste Folge: {next.Name}");
+            ShowStatus(InfoBarSeverity.Informational, Strings.NextEpisode(next.Name));
             Play(next);
         }
         RefreshChannels(); // shows the watched mark
@@ -787,22 +802,23 @@ public sealed partial class MainWindow : Window
         var flyout = (MenuFlyout)sender!;
         flyout.Items.Clear();
         var tracks = _player?.Tracks() ?? [];
-        AddTracks(flyout, "Tonspur", "audio", "aid", tracks, allowOff: false);
+        AddTracks(flyout, Strings.AudioTrack, "audio", "aid", tracks, allowOff: false);
         flyout.Items.Add(new MenuFlyoutSeparator());
-        AddTracks(flyout, "Untertitel", "sub", "sid", tracks, allowOff: true);
+        AddTracks(flyout, Strings.Subtitles, "sub", "sid", tracks, allowOff: true);
 
         flyout.Items.Add(new MenuFlyoutSeparator());
-        flyout.Items.Add(new MenuFlyoutItem { Text = "Bildformat", IsEnabled = false });
-        for (var i = 0; i < PictureFormats.Length; i++)
+        flyout.Items.Add(new MenuFlyoutItem { Text = Strings.PictureFormat, IsEnabled = false });
+        var formats = PictureFormats;
+        for (var i = 0; i < formats.Length; i++)
         {
             var format = i;
-            var item = new ToggleMenuFlyoutItem { Text = PictureFormats[i].Label, IsChecked = i == _pictureFormat };
+            var item = new ToggleMenuFlyoutItem { Text = formats[i].Label, IsChecked = i == _pictureFormat };
             item.Click += (_, _) => SetPictureFormat(format);
             flyout.Items.Add(item);
         }
 
         flyout.Items.Add(new MenuFlyoutSeparator());
-        var stats = new MenuFlyoutItem { Text = "Stream-Info ein/aus (I)" };
+        var stats = new MenuFlyoutItem { Text = Strings.StreamInfo };
         stats.Click += (_, _) => _player?.ToggleStats();
         flyout.Items.Add(stats);
     }
@@ -822,11 +838,11 @@ public sealed partial class MainWindow : Window
         flyout.Items.Add(new MenuFlyoutItem { Text = header, IsEnabled = false });
         var ofType = tracks.Where(t => t.Type == type).ToList();
         if (allowOff)
-            AddTrackItem(flyout, "Aus", !ofType.Any(t => t.Selected), property, "no");
+            AddTrackItem(flyout, Strings.Off, !ofType.Any(t => t.Selected), property, "no");
         foreach (var track in ofType)
             AddTrackItem(flyout, track.Label, track.Selected, property, track.Id);
         if (ofType.Count == 0 && !allowOff)
-            flyout.Items.Add(new MenuFlyoutItem { Text = "Keine", IsEnabled = false });
+            flyout.Items.Add(new MenuFlyoutItem { Text = Strings.None, IsEnabled = false });
     }
 
     private void AddTrackItem(MenuFlyout flyout, string text, bool selected, string property, string value)
@@ -854,7 +870,7 @@ public sealed partial class MainWindow : Window
 
     /// <summary>
     /// Switches to the channel's section and selects it there, which plays it or opens a series' episodes.
-    /// With favorites, the Favoriten group is selected, so channel up/down zaps through the favorites;
+    /// With favorites, the favorites group is selected, so channel up/down zaps through the favorites;
     /// otherwise the selected group stays, see RefreshGroups.
     /// </summary>
     private void Open(Channel channel, bool favorites)
@@ -1152,19 +1168,19 @@ public sealed partial class MainWindow : Window
     private async Task<SourceConfig?> ShowSourceDialogAsync(SourceConfig? existing)
     {
         var wasXtream = existing?.Kind == SourceKind.Xtream;
-        var kind = new ComboBox { Header = "Typ", ItemsSource = new[] { "M3U-Playlist", "Xtream Codes" }, SelectedIndex = wasXtream ? 1 : 0, HorizontalAlignment = HorizontalAlignment.Stretch };
-        var name = new TextBox { Header = "Name", Text = existing?.Name ?? "" };
-        var location = new TextBox { Header = "Playlist-URL oder Datei / Xtream-Server", Text = (wasXtream ? existing?.Server : existing?.M3uLocation) ?? "" };
-        var user = new TextBox { Header = "Benutzername (Xtream)", Text = existing?.Username ?? "" };
-        var pass = new PasswordBox { Header = "Passwort (Xtream)", Password = existing?.Password ?? "" };
-        var epg = new TextBox { Header = "EPG-URL (optional, XMLTV)", Text = existing?.EpgUrl ?? "" };
+        var kind = new ComboBox { Header = Strings.SourceType, ItemsSource = new[] { Strings.M3uPlaylist, "Xtream Codes" }, SelectedIndex = wasXtream ? 1 : 0, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var name = new TextBox { Header = Strings.NameHeader, Text = existing?.Name ?? "" };
+        var location = new TextBox { Header = Strings.LocationHeader, Text = (wasXtream ? existing?.Server : existing?.M3uLocation) ?? "" };
+        var user = new TextBox { Header = Strings.UsernameHeader, Text = existing?.Username ?? "" };
+        var pass = new PasswordBox { Header = Strings.PasswordHeader, Password = existing?.Password ?? "" };
+        var epg = new TextBox { Header = Strings.EpgHeader, Text = existing?.EpgUrl ?? "" };
 
         var dialog = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
-            Title = existing is null ? "Quelle hinzufügen" : "Quelle bearbeiten",
-            PrimaryButtonText = existing is null ? "Hinzufügen" : "Speichern",
-            CloseButtonText = "Abbrechen",
+            Title = existing is null ? Strings.AddSource : Strings.EditSource,
+            PrimaryButtonText = existing is null ? Strings.Add : Strings.Save,
+            CloseButtonText = Strings.Cancel,
             DefaultButton = ContentDialogButton.Primary,
             Content = new StackPanel { Spacing = 8, Width = 400, Children = { kind, name, location, user, pass, epg } },
         };
@@ -1193,8 +1209,8 @@ public sealed partial class MainWindow : Window
         var dialog = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
-            Title = "Welche Quelle verwenden?",
-            PrimaryButtonText = "Verwenden",
+            Title = Strings.WhichSource,
+            PrimaryButtonText = Strings.Use,
             DefaultButton = ContentDialogButton.Primary,
             Content = new StackPanel
             {
@@ -1202,7 +1218,7 @@ public sealed partial class MainWindow : Window
                 Width = 400,
                 Children =
                 {
-                    new TextBlock { Text = "Wechseln geht jederzeit oben in der Seitenleiste.", Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] },
+                    new TextBlock { Text = Strings.SwitchHint, Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] },
                     choices,
                 },
             },
@@ -1240,9 +1256,9 @@ public sealed partial class MainWindow : Window
         var dialog = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
-            Title = "Einstellungen",
-            PrimaryButtonText = "Markierte entfernen bzw. einblenden",
-            CloseButtonText = "Schließen",
+            Title = Strings.Settings,
+            PrimaryButtonText = Strings.RemoveOrShow,
+            CloseButtonText = Strings.Close,
         };
         // Only one dialog can be open at a time, so editing closes this one and reopens it afterwards.
         SourceConfig? toEdit = null;
@@ -1253,7 +1269,7 @@ public sealed partial class MainWindow : Window
             {
                 var label = new TextBlock { Text = source.Name, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
                 var edit = new Button { Content = new FontIcon { Glyph = "\uE70F", FontSize = 14 }, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0) };
-                ToolTipService.SetToolTip(edit, "Bearbeiten");
+                ToolTipService.SetToolTip(edit, Strings.Edit);
                 edit.Click += (_, _) =>
                 {
                     toEdit = source;
@@ -1269,20 +1285,58 @@ public sealed partial class MainWindow : Window
             }).ToList(),
         };
         var hidden = _state.HiddenGroups.Order(StringComparer.CurrentCultureIgnoreCase).ToList();
-        var hiddenList = new ListView { SelectionMode = ListViewSelectionMode.Multiple, ItemsSource = hidden };
+        var hiddenList = new ListView { SelectionMode = ListViewSelectionMode.Multiple, ItemsSource = hidden.ConvertAll(HiddenLabel) };
+
+        // The texts are set once at start, so a new language shows after a restart, offered right here.
+        var restart = false;
+        var languages = new[] { Strings.English, Strings.German };
+        var language = new ComboBox
+        {
+            Header = Strings.LanguageHeader,
+            ItemsSource = new[] { "English", "Deutsch" },
+            SelectedIndex = Array.IndexOf(languages, _state.Language),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Margin = new Thickness(0, 12, 0, 0),
+        };
+        var restartButton = new Button { Content = Strings.RestartNow, Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
+        var restartPanel = new StackPanel
+        {
+            Spacing = 8,
+            Visibility = _state.Language == Strings.Language ? Visibility.Collapsed : Visibility.Visible,
+            Children = { new TextBlock { Text = Strings.RestartForLanguage, TextWrapping = TextWrapping.Wrap, Opacity = 0.7 }, restartButton },
+        };
+        language.SelectionChanged += (_, _) =>
+        {
+            _state.Language = languages[language.SelectedIndex];
+            _state.Save();
+            restartPanel.Visibility = _state.Language == Strings.Language ? Visibility.Collapsed : Visibility.Visible;
+        };
+        restartButton.Click += (_, _) =>
+        {
+            restart = true;
+            dialog.Hide();
+        };
+
         dialog.Content = new StackPanel
         {
             Spacing = 8,
             Width = 420,
             Children =
             {
-                new TextBlock { Text = "Quellen", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
-                _sources.Count == 0 ? new TextBlock { Text = "Keine Quellen vorhanden." } : sourceList,
-                new TextBlock { Text = "Ausgeblendete Gruppen", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 12, 0, 0) },
-                hidden.Count == 0 ? new TextBlock { Text = "Keine. Rechtsklick auf eine Gruppe blendet sie aus." } : hiddenList,
+                new TextBlock { Text = Strings.Sources, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
+                _sources.Count == 0 ? new TextBlock { Text = Strings.NoSources } : sourceList,
+                new TextBlock { Text = Strings.HiddenGroups, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 12, 0, 0) },
+                hidden.Count == 0 ? new TextBlock { Text = Strings.NoHiddenGroups } : hiddenList,
+                language,
+                restartPanel,
             },
         };
         var result = await dialog.ShowAsync();
+        if (restart)
+        {
+            Restart();
+            return;
+        }
         if (toEdit is not null)
         {
             await EditSourceAsync(toEdit);
@@ -1310,6 +1364,15 @@ public sealed partial class MainWindow : Window
         RefreshSourcePicker();
         if (activeRemoved)
             await ReloadAsync();
+    }
+
+    private void Restart()
+    {
+        SaveResume();
+        _state.Save(); // before the new instance reads it
+        if (Environment.ProcessPath is { } exe)
+            System.Diagnostics.Process.Start(exe);
+        Close();
     }
 
     private static IEnumerable<int> Selected(ListView list)

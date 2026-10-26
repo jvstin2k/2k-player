@@ -12,7 +12,7 @@ A fast, modern IPTV player for Windows. It plays M3U playlists and Xtream Codes 
 
 - Live TV, movies and series (Xtream Codes), M3U playlists with groups and logos
 - Programme guide with now/next, search across channels and upcoming shows
-- Favourites, hidden categories, resume playback, watched marks, next episode
+- Home page with your favourite channels, movies and series; favourites, hidden categories, resume playback, watched marks, next episode
 - Fullscreen with an overlay bar, mini player that stays on top, picture formats, audio and subtitle tracks
 - Hardware decoding through libmpv, automatic reconnect when a stream drops
 - Passwords and playlist URLs are kept in the Windows Credential Manager, not in plain files

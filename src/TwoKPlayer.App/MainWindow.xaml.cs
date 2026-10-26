@@ -160,7 +160,6 @@ public sealed partial class MainWindow : Window
         void OnLoaded(object sender, RoutedEventArgs e)
         {
             Root.Loaded -= OnLoaded;
-            EndStartupFeedback();
             _ = IsSmokeTest ? SmokeTestAsync() : StartAsync();
         }
         Root.Loaded += OnLoaded;
@@ -1033,7 +1032,26 @@ public sealed partial class MainWindow : Window
 
     private void OnVideoHostSizeChanged(object sender, SizeChangedEventArgs e) => UpdateVideoBounds();
 
+    private bool _boundsQueued;
+
+    /// <summary>
+    /// Moves the video window after the current XAML callback, never inside it. libmpv watches its parent window and,
+    /// on a resize, waits for its own window thread; while waiting, Windows lets queued XAML work run on this thread,
+    /// and WinUI ends the process when that happens inside a layout pass ("Reentrancy was detected", c000027b).
+    /// That crashed leaving fullscreen, where SizeChanged comes from the layout pass.
+    /// </summary>
     private void UpdateVideoBounds()
+    {
+        if (_boundsQueued)
+            return;
+        _boundsQueued = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            _boundsQueued = false;
+            ApplyVideoBounds();
+        });
+    }
+
+    private void ApplyVideoBounds()
     {
         if (_player is null || VideoHost.XamlRoot is null)
             return;
@@ -1186,39 +1204,6 @@ public sealed partial class MainWindow : Window
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool GetCursorPos(out CursorPoint point);
-
-    /// <summary>
-    /// Windows shows the busy cursor after a start from the shell until the app's UI thread first calls GetMessage.
-    /// WinUI's message loop apparently never does, so the busy cursor stays where the app sets a plain Win32 cursor:
-    /// over the video. A message posted to this thread and taken right back is that first call.
-    /// </summary>
-    private static void EndStartupFeedback()
-    {
-        const uint message = 0x8000 + 0x2B; // WM_APP + an arbitrary offset, nobody else posts it
-        if (PostThreadMessageW(GetCurrentThreadId(), message, 0, 0))
-            GetMessageW(out _, -1, message, message);
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct Msg
-    {
-        public nint Hwnd;
-        public uint Message;
-        public nint WParam, LParam;
-        public uint Time;
-        public CursorPoint Point;
-        public uint Private;
-    }
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool PostThreadMessageW(uint thread, uint message, nint wParam, nint lParam);
-
-    [LibraryImport("user32.dll")]
-    private static partial int GetMessageW(out Msg msg, nint hwnd, uint min, uint max);
-
-    [LibraryImport("kernel32.dll")]
-    private static partial uint GetCurrentThreadId();
 
     // ---------------------------------------------------------------- sources and settings
 

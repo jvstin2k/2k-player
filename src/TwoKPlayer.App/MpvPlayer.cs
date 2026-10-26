@@ -22,10 +22,6 @@ internal sealed partial class MpvPlayer : IDisposable
     private static MpvPlayer? s_hookTarget;
     private static nint s_staticProc;
 
-    // A copy, not the shared system arrow: in installed copies the arrow set here still showed as the busy cursor,
-    // most likely Windows' start feedback, which draws the shared arrow as busy while it lasts.
-    private static readonly nint s_arrow = CopyIcon(LoadCursorW(0, IDC_ARROW));
-
     /// <summary>
     /// Raised on the mpv event thread when a file stops by itself: with an error message when it could not be opened
     /// or broke off, with null at its regular end. Not raised when another file replaces it.
@@ -122,7 +118,7 @@ internal sealed partial class MpvPlayer : IDisposable
     {
         if (message == WM_SETCURSOR)
         {
-            SetCursor(s_arrow);
+            SetCursor(LoadCursorW(0, IDC_ARROW));
             return 1;
         }
         return CallWindowProcW(s_staticProc, hwnd, message, wParam, lParam);
@@ -376,9 +372,6 @@ internal sealed partial class MpvPlayer : IDisposable
 
     [LibraryImport("user32.dll")]
     private static partial nint LoadCursorW(nint instance, nint name);
-
-    [LibraryImport("user32.dll")]
-    private static partial nint CopyIcon(nint icon);
 
     [LibraryImport("user32.dll")]
     private static partial nint SetCursor(nint cursor);

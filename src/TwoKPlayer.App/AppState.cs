@@ -129,5 +129,6 @@ internal static class ChannelCache
     {
         File.Delete(ChannelsPath(sourceId));
         File.Delete(EpgPath(sourceId));
+        File.Delete(EpgPath(sourceId) + ".url");
     }
 }

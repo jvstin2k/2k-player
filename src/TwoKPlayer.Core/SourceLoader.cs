@@ -56,13 +56,18 @@ public sealed class SourceLoader(HttpClient http)
 
     /// <summary>
     /// Downloads the XMLTV file (the source's own EPG URL if set, otherwise the first one the playlist advertised)
-    /// into <paramref name="cacheFile"/>, unless the cached copy is younger than <paramref name="maxAge"/>.
+    /// into <paramref name="cacheFile"/>, unless the cached copy came from the same URL and is younger than <paramref name="maxAge"/>.
     /// Returns true when a new file was written.
     /// </summary>
     public async Task<bool> UpdateEpgCacheAsync(SourceConfig source, PlaylistResult playlist, string cacheFile, TimeSpan maxAge, CancellationToken ct = default)
     {
-        var url = source.EpgUrl ?? playlist.EpgUrls.FirstOrDefault();
-        if (url is null || (File.Exists(cacheFile) && File.GetLastWriteTimeUtc(cacheFile) > DateTime.UtcNow - maxAge))
+        var url = EpgUrlFor(source, playlist);
+        if (url is null)
+            return false;
+        // The URL the cache came from sits next to it, so a changed EPG link is fetched right away instead of after maxAge.
+        var urlFile = cacheFile + ".url";
+        if (File.Exists(cacheFile) && File.GetLastWriteTimeUtc(cacheFile) > DateTime.UtcNow - maxAge
+            && File.Exists(urlFile) && await File.ReadAllTextAsync(urlFile, ct).ConfigureAwait(false) == url)
             return false;
 
         // Download next to the cache and swap, so a broken download never replaces a good file.
@@ -71,8 +76,13 @@ public sealed class SourceLoader(HttpClient http)
         await using (var target = File.Create(temp))
             await download.CopyToAsync(target, ct).ConfigureAwait(false);
         File.Move(temp, cacheFile, overwrite: true);
+        await File.WriteAllTextAsync(urlFile, url, ct).ConfigureAwait(false);
         return true;
     }
+
+    /// <summary>The source's own EPG URL if set, otherwise the first one the playlist advertised; null when there is none.</summary>
+    public static string? EpgUrlFor(SourceConfig source, PlaylistResult playlist)
+        => source.EpgUrl is { } own ? WebUtility.HtmlDecode(own) : playlist.EpgUrls.FirstOrDefault();
 
     public static async Task<EpgGuide> LoadEpgFileAsync(string path, CancellationToken ct = default)
     {

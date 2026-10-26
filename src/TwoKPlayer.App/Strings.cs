@@ -1,4 +1,5 @@
 using System.Globalization;
+using TwoKPlayer.Core.Epg;
 
 namespace TwoKPlayer.App;
 
@@ -104,6 +105,34 @@ public static class Strings
     public static string Reconnecting(int attempt, int max)
         => T($"Connection interrupted, reconnecting ({attempt}/{max}) …", $"Verbindung unterbrochen, verbinde neu ({attempt}/{max}) …");
     public static string PlaybackFailed(string error) => T($"Playback failed: {error}", $"Wiedergabe fehlgeschlagen: {error}");
+    public static string EpgLoading => T("Loading the TV guide …", "TV-Guide wird geladen …");
+    public static string NoEpg => T("No EPG for this source. Add an XMLTV link under Settings › Sources › Edit.",
+        "Kein EPG für diese Quelle. Trag unter Einstellungen › Quellen › Bearbeiten einen XMLTV-Link ein.");
+    public static string EpgFailed(string error) => T($"The EPG could not be loaded: {error}", $"EPG konnte nicht geladen werden: {error}");
+    public static string EpgFormat(EpgFormatError error) => error switch
+    {
+        EpgFormatError.Html => T("The EPG link returns a web page instead of an XMLTV file. Use the direct link to the .xml or .xml.gz file.",
+            "Der EPG-Link liefert eine Webseite statt einer XMLTV-Datei. Nimm den direkten Link zur .xml- oder .xml.gz-Datei."),
+        EpgFormatError.Zip => T("The EPG link returns a ZIP file. Only .xml and .xml.gz are supported.",
+            "Der EPG-Link liefert eine ZIP-Datei. Unterstützt werden nur .xml und .xml.gz."),
+        EpgFormatError.Xz => T("The EPG link returns an .xz file. Only .xml and .xml.gz are supported.",
+            "Der EPG-Link liefert eine .xz-Datei. Unterstützt werden nur .xml und .xml.gz."),
+        _ => T("The EPG link returns XML, but not in XMLTV format.", "Der EPG-Link liefert XML, aber nicht im XMLTV-Format."),
+    };
+    public static string? EpgProblem(EpgDiagnosis d) => d.Problem switch
+    {
+        Core.Epg.EpgProblem.NoProgrammes => T("The EPG loaded, but contains no programmes.", "Der EPG wurde geladen, enthält aber keine Sendungen."),
+        Core.Epg.EpgProblem.NoMatchingChannels => T(
+            $"The EPG has programmes for {d.EpgChannels} channels, but none matches the channels shown here. Your channels use IDs like {Join(d.ChannelIdSamples)}, the EPG uses {Join(d.EpgIdSamples)}. The EPG is probably for another country or provider.",
+            $"Der EPG hat Sendungen für {d.EpgChannels} Sender, aber keiner passt zu den Sendern hier. Deine Sender haben IDs wie {Join(d.ChannelIdSamples)}, der EPG nutzt {Join(d.EpgIdSamples)}. Der EPG ist vermutlich für ein anderes Land oder einen anderen Anbieter."),
+        Core.Epg.EpgProblem.OutOfRange => T(
+            $"The EPG has no programmes for now. Its data runs from {d.FirstStart?.ToLocalTime():g} to {d.LastStop?.ToLocalTime():g}, so the file is probably outdated.",
+            $"Der EPG hat keine Sendungen für jetzt. Seine Daten reichen von {d.FirstStart?.ToLocalTime():g} bis {d.LastStop?.ToLocalTime():g}, die Datei ist also vermutlich veraltet."),
+        _ => null,
+    };
+
+    private static string Join(IReadOnlyList<string> ids) => string.Join(", ", ids.Select(id => $"\"{id}\""));
+
     public static string NextEpisode(string name) => T($"Next episode: {name}", $"Nächste Folge: {name}");
 
     // ---------------------------------------------------------------- updates

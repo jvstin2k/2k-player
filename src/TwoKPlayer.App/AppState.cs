@@ -46,7 +46,7 @@ internal static class CrashLog
     }
 }
 
-/// <summary>Per-user choices that outlive a session: favorites, hidden groups, resume positions, watched titles and volume.</summary>
+/// <summary>Per-user choices that outlive a session: favorites, hidden groups, resume positions, watched titles, volume and the source in use.</summary>
 internal sealed class AppState
 {
     private static readonly string FilePath = Path.Combine(AppPaths.Root, "state.json");
@@ -64,6 +64,9 @@ internal sealed class AppState
 
     /// <summary>0 to 100, as mpv's volume property.</summary>
     public double Volume { get; set; } = 100;
+
+    /// <summary>The source last chosen, preselected when the app asks which one to use.</summary>
+    public Guid? ActiveSource { get; set; }
 
     public static AppState Load()
     {

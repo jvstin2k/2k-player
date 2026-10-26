@@ -10,6 +10,29 @@
     </Window.SystemBackdrop>
 
     <Grid x:Name="Root" PreviewKeyDown="OnPreviewKeyDown">
+        <Grid.Resources>
+            <!-- Movie and series cards on the home page -->
+            <DataTemplate x:Key="PosterTemplate" x:DataType="local:ChannelRow">
+                <StackPanel Width="150" Spacing="6">
+                    <StackPanel.ContextFlyout>
+                        <MenuFlyout>
+                            <MenuFlyoutItem Text="Aus Favoriten entfernen" Tag="{x:Bind}" Click="OnRemoveFavorite">
+                                <MenuFlyoutItem.Icon>
+                                    <FontIcon Glyph="&#xE735;" />
+                                </MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                        </MenuFlyout>
+                    </StackPanel.ContextFlyout>
+                    <Border Height="225" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                        <Image Source="{x:Bind Poster}" Stretch="UniformToFill" />
+                    </Border>
+                    <TextBlock Text="{x:Bind Channel.Name}" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{x:Bind Subtitle}" Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </DataTemplate>
+        </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition x:Name="TitleBarRow" Height="44" />
             <RowDefinition Height="*" />
@@ -49,6 +72,12 @@
                 <ListView x:Name="SectionList" Grid.Row="1" SelectionChanged="OnSectionChanged">
                     <ListViewItem>
                         <StackPanel Orientation="Horizontal" Spacing="14">
+                            <FontIcon Glyph="&#xE80F;" FontSize="16" />
+                            <TextBlock Text="Startseite" />
+                        </StackPanel>
+                    </ListViewItem>
+                    <ListViewItem>
+                        <StackPanel Orientation="Horizontal" Spacing="14">
                             <FontIcon Glyph="&#xE7F4;" FontSize="16" />
                             <TextBlock Text="Live TV" />
                         </StackPanel>
@@ -73,7 +102,7 @@
                     </ListViewItem>
                 </ListView>
 
-                <TextBlock Grid.Row="2" Text="KATEGORIEN" Margin="14,10,0,0"
+                <TextBlock x:Name="CategoriesHeader" Grid.Row="2" Text="KATEGORIEN" Margin="14,10,0,0"
                            Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
 
@@ -252,6 +281,67 @@
                     </StackPanel>
                 </Grid>
             </Grid>
+
+            <!-- Home: favorite channels, movies and series; replaces list and player while Startseite is selected -->
+            <ScrollViewer x:Name="HomePanel" Grid.Column="1" Grid.ColumnSpan="2" Grid.Row="1" Margin="0,0,12,12" Visibility="Collapsed">
+                <StackPanel Spacing="8" Padding="8,4,8,24">
+                    <Grid ColumnSpacing="12" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Startseite" Style="{StaticResource TitleTextBlockStyle}" />
+                        <!-- Playback goes on in the background; this leads back to the player -->
+                        <Button x:Name="NowPlayingButton" Grid.Column="1" Visibility="Collapsed" Click="OnBackToPlayer" CornerRadius="16">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE768;" FontSize="14" />
+                                <TextBlock x:Name="NowPlayingText" TextTrimming="CharacterEllipsis" MaxWidth="320" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <TextBlock x:Name="HomeEmpty" Visibility="Collapsed" TextWrapping="Wrap" Margin="0,24,0,0"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Text="Noch keine Favoriten. Markiere Sender, Filme oder Serien mit dem Stern, dann erscheinen sie hier." />
+
+                    <TextBlock x:Name="HomeLiveHeader" Text="Sender" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,8,0,0" />
+                    <GridView x:Name="HomeLive" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnHomeItemClick"
+                              ScrollViewer.VerticalScrollMode="Disabled">
+                        <GridView.ItemTemplate>
+                            <DataTemplate x:DataType="local:ChannelRow">
+                                <StackPanel Width="200" Padding="12" Spacing="6" CornerRadius="12"
+                                            Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                    <StackPanel.ContextFlyout>
+                                        <MenuFlyout>
+                                            <MenuFlyoutItem Text="Aus Favoriten entfernen" Tag="{x:Bind}" Click="OnRemoveFavorite">
+                                                <MenuFlyoutItem.Icon>
+                                                    <FontIcon Glyph="&#xE735;" />
+                                                </MenuFlyoutItem.Icon>
+                                            </MenuFlyoutItem>
+                                        </MenuFlyout>
+                                    </StackPanel.ContextFlyout>
+                                    <Border Height="100" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                        <Image Source="{x:Bind Logo}" Stretch="Uniform" Margin="14" />
+                                    </Border>
+                                    <TextBlock Text="{x:Bind Channel.Name}" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{x:Bind Subtitle}" Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                                    <ProgressBar Value="{x:Bind Progress}" Maximum="1" Visibility="{x:Bind ProgressVisibility}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </GridView.ItemTemplate>
+                    </GridView>
+
+                    <TextBlock x:Name="HomeMoviesHeader" Text="Filme" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,16,0,0" />
+                    <GridView x:Name="HomeMovies" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnHomeItemClick"
+                              ScrollViewer.VerticalScrollMode="Disabled" ItemTemplate="{StaticResource PosterTemplate}" />
+
+                    <TextBlock x:Name="HomeSeriesHeader" Text="Serien" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,16,0,0" />
+                    <GridView x:Name="HomeSeries" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnHomeItemClick"
+                              ScrollViewer.VerticalScrollMode="Disabled" ItemTemplate="{StaticResource PosterTemplate}" />
+                </StackPanel>
+            </ScrollViewer>
 
             <!-- TV guide: replaces list and player while the TV-Guide section is selected -->
             <Grid x:Name="GuidePanel" Grid.Column="1" Grid.ColumnSpan="2" Grid.Row="1" Margin="0,0,12,12" CornerRadius="12" Visibility="Collapsed"

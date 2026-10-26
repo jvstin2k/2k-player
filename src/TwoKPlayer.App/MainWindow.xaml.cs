@@ -18,6 +18,7 @@ public sealed partial class MainWindow : Window
 {
     private enum Section
     {
+        Home,
         Live,
         Movies,
         Series,
@@ -46,7 +47,7 @@ public sealed partial class MainWindow : Window
     private const string AllGroups = "Alle";
     private const string FavoritesGroup = "★ Favoriten";
     private const string NoGroup = "Ohne Gruppe";
-    private static readonly string[] SectionTitles = ["Live TV", "Filme", "Serien", "TV-Guide"];
+    private static readonly string[] SectionTitles = ["Startseite", "Live TV", "Filme", "Serien", "TV-Guide"];
     private static readonly TimeSpan EpgMaxAge = TimeSpan.FromHours(12);
     private const double GuidePxPerMinute = 4, GuideNameWidth = 220;
     private const int GuideHours = 6;
@@ -136,7 +137,7 @@ public sealed partial class MainWindow : Window
             _player?.Dispose();
         };
 
-        SectionList.SelectedIndex = 0;
+        SectionList.SelectedIndex = (int)Section.Home; // nothing plays yet, so the app opens without the player
         _ = StartAsync();
     }
 
@@ -287,7 +288,7 @@ public sealed partial class MainWindow : Window
     private static string GroupOf(Channel c) => c.Group ?? NoGroup;
 
     // The guide shows live channels, so it shares Live TV's hidden groups.
-    private string HiddenKey(string group) => $"{SectionTitles[_section == Section.Guide ? 0 : (int)_section]} · {group}";
+    private string HiddenKey(string group) => $"{SectionTitles[(int)(_section == Section.Guide ? Section.Live : _section)]} · {group}";
 
     private bool IsHidden(string group) => _state.HiddenGroups.Contains(HiddenKey(group));
 
@@ -326,7 +327,9 @@ public sealed partial class MainWindow : Window
 
         // The search matches channel names and, for live channels, programmes that are on now or later.
         var items = new List<(Channel Channel, EpgProgramme? Match)>();
-        foreach (var c in _episodes ?? _channels.Where(c => InSection(c) && InGroup(c, group)))
+        var source = _episodes
+            ?? (_section == Section.Home ? _channels.Where(c => _state.Favorites.Contains(c.Id)) : _channels.Where(c => InSection(c) && InGroup(c, group)));
+        foreach (var c in source)
         {
             if (query.Length == 0 || c.Name.Contains(query, StringComparison.CurrentCultureIgnoreCase))
                 items.Add((c, null));
@@ -335,13 +338,62 @@ public sealed partial class MainWindow : Window
         }
         CountText.Text = items.Count.ToString();
 
-        if (_section == Section.Guide)
+        if (_section == Section.Home)
+            ShowHome(items, now);
+        else if (_section == Section.Guide)
             ShowGuide(items.Select(i => i.Channel).ToList(), now);
         else
             ChannelList.ItemsSource = items
                 .Select(i => new ChannelRow(i.Channel, GuideFor(i.Channel), now, _state.Favorites.Contains(i.Channel.Id), _state.Watched.Contains(i.Channel.Id), i.Match))
                 .ToList();
     }
+
+    private void ShowHome(List<(Channel Channel, EpgProgramme? Match)> items, DateTimeOffset now)
+    {
+        var rows = items.ConvertAll(i => new ChannelRow(i.Channel, GuideFor(i.Channel), now, true, _state.Watched.Contains(i.Channel.Id), i.Match));
+        // M3U playlists list series episodes one by one; those count as series here, as in the Serien section.
+        Fill(HomeLiveHeader, HomeLive, rows.FindAll(r => r.Channel.Kind == MediaKind.Live));
+        Fill(HomeMoviesHeader, HomeMovies, rows.FindAll(r => r.Channel.Kind == MediaKind.Movie));
+        Fill(HomeSeriesHeader, HomeSeries, rows.FindAll(r => r.Channel.Kind is MediaKind.Series or MediaKind.Episode));
+        HomeEmpty.Visibility = rows.Count == 0 && _state.Favorites.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        NowPlayingButton.Visibility = _playing is null ? Visibility.Collapsed : Visibility.Visible;
+        NowPlayingText.Text = _playing?.Name ?? "";
+
+        static void Fill(UIElement header, ListViewBase list, List<ChannelRow> rows)
+        {
+            header.Visibility = list.Visibility = rows.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            list.ItemsSource = rows;
+        }
+    }
+
+    private void OnHomeItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is ChannelRow row)
+            Open(row.Channel, favorites: true);
+    }
+
+    private void OnBackToPlayer(object sender, RoutedEventArgs e)
+    {
+        if (_playing is { } channel)
+            SectionList.SelectedIndex = (int)SectionOf(channel);
+    }
+
+    private void OnRemoveFavorite(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not ChannelRow row)
+            return;
+        _state.Favorites.Remove(row.Channel.Id);
+        _state.Save();
+        RefreshChannels();
+    }
+
+    private static Section SectionOf(Channel c) => c.Kind switch
+    {
+        MediaKind.Live => Section.Live,
+        MediaKind.Movie => Section.Movies,
+        _ => Section.Series,
+    };
 
     private void ShowGuide(List<Channel> channels, DateTimeOffset now)
     {
@@ -370,12 +422,19 @@ public sealed partial class MainWindow : Window
         _episodes = null;
 
         var guide = _section == Section.Guide;
+        var home = _section == Section.Home;
         GuidePanel.Visibility = guide ? Visibility.Visible : Visibility.Collapsed;
-        ChannelPane.Visibility = PlayerGrid.Visibility = guide ? Visibility.Collapsed : Visibility.Visible;
-        // The video is a native window above all XAML; it has to hide while the guide covers the player.
-        _player?.SetVisible(!guide && _playing is not null);
+        HomePanel.Visibility = home ? Visibility.Visible : Visibility.Collapsed;
+        ChannelPane.Visibility = PlayerGrid.Visibility = guide || home ? Visibility.Collapsed : Visibility.Visible;
+        // The home page has no groups; it shows the favorites of all sections.
+        CategoriesHeader.Visibility = GroupList.Visibility = home ? Visibility.Collapsed : Visibility.Visible;
+        // The video is a native window above all XAML; it has to hide while the guide or home page covers the player.
+        _player?.SetVisible(VideoShown);
         RefreshGroups();
     }
+
+    /// <summary>Whether the section shows the player; playback goes on in the background elsewhere.</summary>
+    private bool VideoShown => _section is not (Section.Home or Section.Guide) && _playing is not null;
 
     private void OnGroupSelected(object sender, SelectionChangedEventArgs e)
     {
@@ -385,7 +444,12 @@ public sealed partial class MainWindow : Window
         RefreshChannels();
     }
 
-    private void OnSearchChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs e) => RefreshChannels();
+    // Raised asynchronously; code that clears the box refreshes the list itself, so a late refresh does not drop the selection.
+    private void OnSearchChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs e)
+    {
+        if (e.Reason != AutoSuggestionBoxTextChangeReason.ProgrammaticChange)
+            RefreshChannels();
+    }
 
     private void OnBack(object sender, RoutedEventArgs e)
     {
@@ -478,6 +542,7 @@ public sealed partial class MainWindow : Window
             var resume = live ? 0 : _state.Resume.GetValueOrDefault(channel.Id);
             _player.Play(channel.StreamUrl, channel.UserAgent, channel.Referrer, resume);
             _playing = channel;
+            _player.SetVisible(VideoShown); // the next episode can start while the home page or guide is open
             _reconnects = 0;
             SetPaused(false);
             if (resume > 0)
@@ -542,7 +607,10 @@ public sealed partial class MainWindow : Window
             ShowStatus(InfoBarSeverity.Warning, $"Verbindung unterbrochen, verbinde neu ({_reconnects}/{MaxReconnects}) …");
             await Task.Delay(TimeSpan.FromSeconds(2 * _reconnects));
             if (_playing == channel)
+            {
                 _player?.Play(channel.StreamUrl, channel.UserAgent, channel.Referrer);
+                _player?.SetVisible(VideoShown);
+            }
             return;
         }
 
@@ -569,7 +637,7 @@ public sealed partial class MainWindow : Window
 
     private void StepChannel(int delta)
     {
-        if (_section == Section.Guide || ChannelList.Items.Count == 0)
+        if (_section is (Section.Home or Section.Guide) || ChannelList.Items.Count == 0)
             return;
         ChannelList.SelectedIndex = Math.Clamp(ChannelList.SelectedIndex + delta, 0, ChannelList.Items.Count - 1);
         ChannelList.ScrollIntoView(ChannelList.SelectedItem);
@@ -702,13 +770,32 @@ public sealed partial class MainWindow : Window
             PlayFromGuide(row.Channel);
     }
 
-    private void PlayFromGuide(Channel channel)
+    private void PlayFromGuide(Channel channel) => Open(channel, favorites: false);
+
+    /// <summary>
+    /// Switches to the channel's section and selects it there, which plays it or opens a series' episodes.
+    /// With favorites, the Favoriten group is selected, so channel up/down zaps through the favorites;
+    /// otherwise the selected group stays, see RefreshGroups.
+    /// </summary>
+    private void Open(Channel channel, bool favorites)
     {
-        SectionList.SelectedIndex = (int)Section.Live; // keeps the selected group, see RefreshGroups
+        SectionList.SelectedIndex = (int)SectionOf(channel);
+        if (favorites && GroupList.ItemsSource is List<string> groups && groups.IndexOf(FavoritesGroup) is var index and >= 0)
+        {
+            SearchBox.Text = ""; // a search on the home page filtered the favorites, not this list
+            _refreshingGroups = true;
+            GroupList.SelectedIndex = index;
+            _refreshingGroups = false;
+            RefreshChannels();
+        }
         if (ChannelList.ItemsSource is List<ChannelRow> rows && rows.Find(r => r.Channel.Id == channel.Id) is { } row)
         {
             ChannelList.SelectedItem = row;
             ChannelList.ScrollIntoView(row);
+        }
+        else if (channel.Kind == MediaKind.Series)
+        {
+            _ = ShowEpisodesAsync(channel);
         }
         else
         {
@@ -820,7 +907,7 @@ public sealed partial class MainWindow : Window
     /// <summary>Normal window, fullscreen, or the mini player: a small always-on-top window with only the video.</summary>
     private void SetMode(ViewMode mode)
     {
-        if (mode == _mode || (_section == Section.Guide && mode != ViewMode.Normal))
+        if (mode == _mode || (_section is (Section.Home or Section.Guide) && mode != ViewMode.Normal))
             return;
         if (_mode == ViewMode.Normal && mode == ViewMode.Mini)
             _restoreBounds = new Windows.Graphics.RectInt32(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);

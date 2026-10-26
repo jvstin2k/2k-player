@@ -10,7 +10,7 @@ namespace TwoKPlayer.App;
 /// <summary>One line in the channel list: channel plus what is on right now.</summary>
 public sealed class ChannelRow : INotifyPropertyChanged
 {
-    private ImageSource? _logo;
+    private ImageSource? _logo, _poster;
     private bool _isFavorite;
     private readonly bool _watched;
     private readonly string? _match;
@@ -34,6 +34,9 @@ public sealed class ChannelRow : INotifyPropertyChanged
 
     // Created on first access, i.e. only for rows the list actually shows; VOD lists run into tens of thousands.
     public ImageSource? Logo => _logo ??= Images.FromUrl(Channel.LogoUrl);
+
+    /// <summary>The same image decoded larger, for the movie and series cards on the home page.</summary>
+    public ImageSource? Poster => _poster ??= Images.FromUrl(Channel.LogoUrl, 300);
 
     public double Progress { get; }
     public Visibility ProgressVisibility => Now is null ? Visibility.Collapsed : Visibility.Visible;
@@ -90,6 +93,6 @@ public sealed record GuideBlock(Channel Channel, EpgProgramme Programme, double 
 
 internal static class Images
 {
-    public static ImageSource? FromUrl(string? url)
-        => Uri.TryCreate(url, UriKind.Absolute, out var uri) ? new BitmapImage(uri) { DecodePixelWidth = 96 } : null;
+    public static ImageSource? FromUrl(string? url, int decodeWidth = 96)
+        => Uri.TryCreate(url, UriKind.Absolute, out var uri) ? new BitmapImage(uri) { DecodePixelWidth = decodeWidth } : null;
 }

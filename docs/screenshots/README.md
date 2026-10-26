@@ -1,16 +1,18 @@
 # Screenshots
 
-Pictures for the README of this repository and of the releases page. The release workflow copies this folder to `2k-player-releases/screenshots/`.
+Pictures for the README of this repository and of the releases page. The release workflow copies the `.jpg` files to `2k-player-releases/screenshots/`.
 
 | File | What it shows |
 |------|---------------|
-| `live.png` | Live TV: categories, channel list with now/next, a channel playing |
-| `guide.png` | TV-Guide timeline across several channels |
-| `series.png` | Serien: a series open with its seasons and episodes |
-| `fullscreen.png` | Fullscreen with the control bar shown |
+| `hero.jpg` | Home page and Live TV, with logo and tagline |
+| `home.jpg` | Home page with favourite channels |
+| `live.jpg` | Live TV: categories, channel list, a channel playing |
+| `fullscreen.jpg` | Fullscreen with the control bar shown |
+| `settings.jpg` | Settings: language and updates |
 
-Before adding a picture:
+The channels are free streams from [iptv-org](https://github.com/iptv-org/iptv). Each picture is an app screenshot placed in a window frame on the app's purple-to-coral background, exported at 1600 px wide (hero 2000 px) as JPEG.
 
-- No server address, user name, password or playlist URL may be visible (also not in the "Quelle hinzufügen" dialog or the stream info).
-- Take it at about 1600 × 900 and save it as PNG.
-- Pick channels and shows that are fine to show publicly.
+Before replacing a picture:
+
+- No server address, user name, password or playlist URL may be visible (also not in the source dialog or the stream info).
+- Take the screenshot at about 1920 × 1080.

@@ -12,16 +12,14 @@
 
 ---
 
-<!-- Screenshots: remove this comment line and the closing one once the files are in docs/screenshots of the source repo
 <p align="center">
-  <img src="screenshots/live.png" width="800" alt="Live TV with channel list and now/next">
+  <img src="screenshots/hero.jpg" width="900" alt="2k-Player: home page and Live TV">
 </p>
 
 <p align="center">
-  <img src="screenshots/guide.png" width="395" alt="TV guide">
-  <img src="screenshots/series.png" width="395" alt="Series with seasons and episodes">
+  <img src="screenshots/fullscreen.jpg" width="445" alt="Fullscreen with control bar">
+  <img src="screenshots/settings.jpg" width="445" alt="Settings with language and updates">
 </p>
--->
 
 ## Features
 

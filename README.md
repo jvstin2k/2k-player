@@ -17,6 +17,7 @@ A fast, modern IPTV player for Windows. It plays M3U playlists and Xtream Codes 
 - Hardware decoding through libmpv, automatic reconnect when a stream drops
 - Passwords and playlist URLs are kept in the Windows Credential Manager, not in plain files
 - Update button inside the app when a new release is out
+- English and German interface, switchable in the settings (gear button)
 
 ## Build it yourself
 

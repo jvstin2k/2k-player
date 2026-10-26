@@ -24,7 +24,7 @@ public sealed class ChannelRow : INotifyPropertyChanged
         _isFavorite = isFavorite;
         _watched = watched;
         if (match is not null)
-            _match = match.IsAiring(now) ? $"Jetzt: {match.Title}" : $"{match.Start.ToLocalTime():ddd HH:mm}  {match.Title}";
+            _match = match.IsAiring(now) ? Strings.NowOn(match.Title) : $"{match.Start.ToLocalTime().ToString("ddd HH:mm", Strings.Culture)}  {match.Title}";
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -41,11 +41,11 @@ public sealed class ChannelRow : INotifyPropertyChanged
     public double Progress { get; }
     public Visibility ProgressVisibility => Now is null ? Visibility.Collapsed : Visibility.Visible;
 
-    public string Subtitle => _match ?? Now?.Title ?? (_watched ? "✓ Gesehen · " : "") + Channel.Kind switch
+    public string Subtitle => _match ?? Now?.Title ?? (_watched ? Strings.Watched : "") + Channel.Kind switch
     {
-        MediaKind.Movie => "Film",
-        MediaKind.Series => "Serie",
-        MediaKind.Episode => Channel.Group ?? "Folge",
+        MediaKind.Movie => Strings.Movie,
+        MediaKind.Series => Strings.OneSeries,
+        MediaKind.Episode => Channel.Group ?? Strings.Episode,
         _ => "",
     };
 

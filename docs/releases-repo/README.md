@@ -12,6 +12,17 @@
 
 ---
 
+<!-- Screenshots: remove this comment line and the closing one once the files are in docs/screenshots of the source repo
+<p align="center">
+  <img src="screenshots/live.png" width="800" alt="Live TV with channel list and now/next">
+</p>
+
+<p align="center">
+  <img src="screenshots/guide.png" width="395" alt="TV guide">
+  <img src="screenshots/series.png" width="395" alt="Series with seasons and episodes">
+</p>
+-->
+
 ## Features
 
 - **All common sources:** M3U playlists, Xtream Codes logins and XMLTV EPG (also gzipped)

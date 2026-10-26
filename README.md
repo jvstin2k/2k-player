@@ -8,6 +8,16 @@ A fast, modern IPTV player for Windows. It plays M3U playlists and Xtream Codes 
 
 2k-Player does not include or sell any channels, playlists or subscriptions. You need your own IPTV source.
 
+![2k-Player: home page and Live TV](docs/screenshots/hero.jpg)
+
+| Home | Live TV |
+|------|---------|
+| ![Home page with favourite channels](docs/screenshots/home.jpg) | ![Live TV with categories, channel list and player](docs/screenshots/live.jpg) |
+
+| Fullscreen | Settings |
+|------------|----------|
+| ![Fullscreen with control bar](docs/screenshots/fullscreen.jpg) | ![Settings with language and updates](docs/screenshots/settings.jpg) |
+
 ## Features
 
 - Live TV, movies and series (Xtream Codes), M3U playlists with groups and logos

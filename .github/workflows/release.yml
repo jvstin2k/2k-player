@@ -127,6 +127,10 @@ jobs:
           $url = $env:RELEASES_REPO -replace '^https://', "https://x-access-token:$($env:RELEASES_TOKEN)@"
           git clone --depth 1 $url releases-page
           Copy-Item docs/releases-repo/* releases-page/ -Force
+          if (Get-ChildItem docs/screenshots/*.jpg -ErrorAction SilentlyContinue) {
+            New-Item -ItemType Directory releases-page/screenshots -Force | Out-Null
+            Copy-Item docs/screenshots/*.jpg releases-page/screenshots/ -Force
+          }
           Set-Location releases-page
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'

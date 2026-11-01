@@ -223,6 +223,9 @@ internal sealed partial class MpvPlayer : IDisposable
 
     public void Seek(int seconds) => Command("seek", seconds.ToString(), "relative");
 
+    /// <summary>Jumps to a position in the file, for the timeline of movies and episodes.</summary>
+    public void SeekTo(double seconds) => Command("seek", seconds.ToString(CultureInfo.InvariantCulture), "absolute");
+
     /// <summary>mpv's built-in stats overlay: resolution, codecs, bitrate, dropped frames.</summary>
     public void ToggleStats() => Command("script-binding", "stats/display-stats-toggle");
 

@@ -147,11 +147,13 @@ public sealed partial class MainWindow : Window
         _player?.SetProperty("volume", _state.Volume.ToString(CultureInfo.InvariantCulture));
 
         _idleTimer.Tick += OnIdleTick;
+        InitTimeline();
         Closed += (_, _) =>
         {
             SaveResume();
             _state.Save();
             _idleTimer.Stop();
+            _timelineTimer.Stop();
             _player?.Dispose();
         };
 
@@ -687,7 +689,7 @@ public sealed partial class MainWindow : Window
 
             LiveButton.Visibility = live ? Visibility.Visible : Visibility.Collapsed;
             SeekBackButton.Visibility = SeekForwardButton.Visibility = live ? Visibility.Collapsed : Visibility.Visible;
-            SyncBar();
+            ResetTimeline(live, resume); // also syncs the fullscreen bar
             UpdateVideoBounds();
         }
         catch (InvalidOperationException ex)
@@ -1136,6 +1138,7 @@ public sealed partial class MainWindow : Window
         bar.Tracks.Opening += OnTracksOpening;
         bar.Volume.Value = _state.Volume;
         bar.Volume.ValueChanged += OnVolumeChanged;
+        WireTimeline(bar.Position);
         return bar;
     }
 
@@ -1148,6 +1151,20 @@ public sealed partial class MainWindow : Window
         _bar.Programme.Text = string.IsNullOrEmpty(NowProgramme.Text) ? "" : $"{NowTime.Text}  {NowProgramme.Text}";
         _bar.Live.Visibility = LiveButton.Visibility;
         _bar.SeekBack.Visibility = _bar.SeekForward.Visibility = SeekBackButton.Visibility;
+        _bar.Timeline.Visibility = TimelinePanel.Visibility;
+        _updatingTimeline = true;
+        try
+        {
+            _bar.Position.IsEnabled = TimelineSlider.IsEnabled;
+            _bar.Position.Maximum = TimelineSlider.Maximum;
+            _bar.Position.Value = TimelineSlider.Value;
+        }
+        finally
+        {
+            _updatingTimeline = false;
+        }
+        _bar.Elapsed.Text = ElapsedText.Text;
+        _bar.Duration.Text = DurationText.Text;
         _bar.PauseIcon.Glyph = PlayPauseIcon.Glyph;
         _bar.MuteIcon.Glyph = MuteIcon.Glyph;
         if (_bar.Volume.Value != _state.Volume)

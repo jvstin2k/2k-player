@@ -14,7 +14,7 @@ namespace TwoKPlayer.App;
 /// </summary>
 internal sealed partial class FullscreenBar
 {
-    public const int HeightDip = 96;
+    public const int HeightDip = 132;
 
     public Window Window { get; }
     public TextBlock Channel { get; } = new() { FontSize = 16, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
@@ -28,6 +28,10 @@ internal sealed partial class FullscreenBar
     public FontIcon MuteIcon { get; } = Icon("");
     public Slider Volume { get; } = new() { Width = 110, Minimum = 0, Maximum = 100, StepFrequency = 1, VerticalAlignment = VerticalAlignment.Center };
     public MenuFlyout Tracks { get; } = new();
+    public Grid Timeline { get; } = new() { ColumnSpacing = 12, Visibility = Visibility.Collapsed };
+    public TextBlock Elapsed { get; } = TimeText(TextAlignment.Left);
+    public Slider Position { get; } = new() { Minimum = 0, Maximum = 1, StepFrequency = 1, IsEnabled = false, VerticalAlignment = VerticalAlignment.Center };
+    public TextBlock Duration { get; } = TimeText(TextAlignment.Right);
     public Button Exit { get; }
 
     public FullscreenBar(Window owner)
@@ -58,9 +62,25 @@ internal sealed partial class FullscreenBar
         text.Children.Add(Channel);
         text.Children.Add(Programme);
 
-        var content = new Grid { Padding = new Thickness(32, 0, 32, 8), ColumnSpacing = 24 };
+        // Shown for movies and episodes only, like InfoPanel's timeline.
+        Timeline.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Timeline.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        Timeline.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(Position, 1);
+        Grid.SetColumn(Duration, 2);
+        Timeline.Children.Add(Elapsed);
+        Timeline.Children.Add(Position);
+        Timeline.Children.Add(Duration);
+        Grid.SetColumnSpan(Timeline, 2);
+
+        var content = new Grid { Padding = new Thickness(32, 8, 32, 8), ColumnSpacing = 24 };
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetRow(text, 1);
+        Grid.SetRow(buttons, 1);
+        content.Children.Add(Timeline);
         content.Children.Add(text);
         content.Children.Add(buttons);
 
@@ -75,6 +95,15 @@ internal sealed partial class FullscreenBar
         SetWindowLongPtrW(WinRT.Interop.WindowNative.GetWindowHandle(Window), GWLP_HWNDPARENT, WinRT.Interop.WindowNative.GetWindowHandle(owner));
         owner.Closed += (_, _) => Window.Close();
     }
+
+    private static TextBlock TimeText(TextAlignment alignment) => new()
+    {
+        Text = alignment == TextAlignment.Left ? "0:00" : "--:--",
+        MinWidth = 52,
+        TextAlignment = alignment,
+        Opacity = 0.75,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
 
     private static FontIcon Icon(string glyph) => new() { Glyph = glyph, FontSize = 16 };
 

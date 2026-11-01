@@ -16,7 +16,7 @@
                 <StackPanel Width="150" Spacing="6">
                     <StackPanel.ContextFlyout>
                         <MenuFlyout>
-                            <MenuFlyoutItem Text="{x:Bind local:Strings.RemoveFavorite}" Tag="{x:Bind}" Click="OnRemoveFavorite">
+                            <MenuFlyoutItem Text="{x:Bind RemoveLabel}" Tag="{x:Bind}" Click="OnRemoveFromHome">
                                 <MenuFlyoutItem.Icon>
                                     <FontIcon Glyph="&#xE735;" />
                                 </MenuFlyoutItem.Icon>
@@ -32,6 +32,31 @@
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
             </DataTemplate>
+            <!-- Live channel cards on the home page -->
+            <DataTemplate x:Key="LiveCardTemplate" x:DataType="local:ChannelRow">
+                <StackPanel Width="200" Padding="12" Spacing="6" CornerRadius="12"
+                            Background="{ThemeResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <StackPanel.ContextFlyout>
+                        <MenuFlyout>
+                            <MenuFlyoutItem Text="{x:Bind RemoveLabel}" Tag="{x:Bind}" Click="OnRemoveFromHome">
+                                <MenuFlyoutItem.Icon>
+                                    <FontIcon Glyph="&#xE735;" />
+                                </MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                        </MenuFlyout>
+                    </StackPanel.ContextFlyout>
+                    <Border Height="100" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                        <Image Source="{x:Bind Logo}" Stretch="Uniform" Margin="14" />
+                    </Border>
+                    <TextBlock Text="{x:Bind Channel.Name}" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{x:Bind Subtitle}" Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                    <ProgressBar Value="{x:Bind Progress}" Maximum="1" Visibility="{x:Bind ProgressVisibility}" />
+                </StackPanel>
+            </DataTemplate>
+            <!-- The recently watched row mixes both kinds of cards -->
+            <local:HomeCardSelector x:Key="HomeCardSelector" Live="{StaticResource LiveCardTemplate}" Poster="{StaticResource PosterTemplate}" />
         </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition x:Name="TitleBarRow" Height="44" />
@@ -305,7 +330,7 @@
                 </Grid>
             </Grid>
 
-            <!-- Home: favorite channels, movies and series; replaces list and player while Home is selected -->
+            <!-- Home: recently watched, then favorite channels, movies and series; replaces list and player while Home is selected -->
             <ScrollViewer x:Name="HomePanel" Grid.Column="1" Grid.ColumnSpan="2" Grid.Row="1" Margin="0,0,12,12" Visibility="Collapsed">
                 <StackPanel Spacing="8" Padding="8,4,8,24">
                     <Grid ColumnSpacing="12" Margin="0,0,0,8">
@@ -327,34 +352,27 @@
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                Text="{x:Bind local:Strings.HomeEmpty}" />
 
-                    <TextBlock x:Name="HomeLiveHeader" Text="{x:Bind local:Strings.Channels}" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,8,0,0" />
-                    <GridView x:Name="HomeLive" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnHomeItemClick"
-                              ScrollViewer.VerticalScrollMode="Disabled">
-                        <GridView.ItemTemplate>
-                            <DataTemplate x:DataType="local:ChannelRow">
-                                <StackPanel Width="200" Padding="12" Spacing="6" CornerRadius="12"
-                                            Background="{ThemeResource LayerFillColorDefaultBrush}"
-                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                                    <StackPanel.ContextFlyout>
-                                        <MenuFlyout>
-                                            <MenuFlyoutItem Text="{x:Bind local:Strings.RemoveFavorite}" Tag="{x:Bind}" Click="OnRemoveFavorite">
-                                                <MenuFlyoutItem.Icon>
-                                                    <FontIcon Glyph="&#xE735;" />
-                                                </MenuFlyoutItem.Icon>
-                                            </MenuFlyoutItem>
-                                        </MenuFlyout>
-                                    </StackPanel.ContextFlyout>
-                                    <Border Height="100" CornerRadius="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-                                        <Image Source="{x:Bind Logo}" Stretch="Uniform" Margin="14" />
-                                    </Border>
-                                    <TextBlock Text="{x:Bind Channel.Name}" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{x:Bind Subtitle}" Style="{StaticResource CaptionTextBlockStyle}"
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
-                                    <ProgressBar Value="{x:Bind Progress}" Maximum="1" Visibility="{x:Bind ProgressVisibility}" />
-                                </StackPanel>
-                            </DataTemplate>
-                        </GridView.ItemTemplate>
+                    <!-- Newest first in one row that scrolls sideways, see RecentRows -->
+                    <TextBlock x:Name="HomeRecentHeader" Text="{x:Bind local:Strings.RecentlyWatched}" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,8,0,0" />
+                    <GridView x:Name="HomeRecent" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnHomeItemClick"
+                              ItemTemplateSelector="{StaticResource HomeCardSelector}"
+                              ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                              ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                        <GridView.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <ItemsStackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </GridView.ItemsPanel>
+                        <GridView.ItemContainerStyle>
+                            <Style TargetType="GridViewItem" BasedOn="{StaticResource DefaultGridViewItemStyle}">
+                                <Setter Property="VerticalContentAlignment" Value="Top" />
+                            </Style>
+                        </GridView.ItemContainerStyle>
                     </GridView>
+
+                    <TextBlock x:Name="HomeLiveHeader" Text="{x:Bind local:Strings.Channels}" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,16,0,0" />
+                    <GridView x:Name="HomeLive" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnHomeItemClick"
+                              ScrollViewer.VerticalScrollMode="Disabled" ItemTemplate="{StaticResource LiveCardTemplate}" />
 
                     <TextBlock x:Name="HomeMoviesHeader" Text="{x:Bind local:Strings.Movies}" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,16,0,0" />
                     <GridView x:Name="HomeMovies" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnHomeItemClick"

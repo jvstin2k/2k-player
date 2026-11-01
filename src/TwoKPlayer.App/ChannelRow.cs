@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using TwoKPlayer.Core.Epg;
@@ -38,6 +39,11 @@ public sealed class ChannelRow : INotifyPropertyChanged
     /// <summary>The same image decoded larger, for the movie and series cards on the home page.</summary>
     public ImageSource? Poster => _poster ??= Images.FromUrl(Channel.LogoUrl, 300);
 
+    /// <summary>A card in the home page's recently watched row rather than among the favorites.</summary>
+    public bool IsRecent { get; init; }
+
+    public string RemoveLabel => IsRecent ? Strings.RemoveRecent : Strings.RemoveFavorite;
+
     public double Progress { get; }
     public Visibility ProgressVisibility => Now is null ? Visibility.Collapsed : Visibility.Visible;
 
@@ -60,6 +66,18 @@ public sealed class ChannelRow : INotifyPropertyChanged
     }
 
     public string StarGlyph => _isFavorite ? "" : "";
+}
+
+/// <summary>The recently watched row mixes kinds: live channels get the logo card, movies and episodes the poster.</summary>
+public sealed partial class HomeCardSelector : DataTemplateSelector
+{
+    public DataTemplate? Live { get; set; }
+    public DataTemplate? Poster { get; set; }
+
+    protected override DataTemplate? SelectTemplateCore(object item)
+        => item is ChannelRow { Channel.Kind: MediaKind.Live } ? Live : Poster;
+
+    protected override DataTemplate? SelectTemplateCore(object item, DependencyObject container) => SelectTemplateCore(item);
 }
 
 /// <summary>A channel's line in the TV guide, with its programmes laid out on the time axis.</summary>

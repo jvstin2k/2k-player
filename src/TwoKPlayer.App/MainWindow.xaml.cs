@@ -97,6 +97,9 @@ public sealed partial class MainWindow : Window
     /// <summary>Episodes of the series being browsed; null while the normal list is shown.</summary>
     private IReadOnlyList<Channel>? _episodes;
 
+    /// <summary>The series whose episodes _episodes holds; names the series of an episode in the recently watched row.</summary>
+    private Channel? _episodesSeries;
+
     /// <summary>Set while the group list is rebuilt, so its selection events do not reset the view.</summary>
     private bool _refreshingGroups;
 
@@ -455,7 +458,7 @@ public sealed partial class MainWindow : Window
         CountText.Text = items.Count.ToString();
 
         if (_section == Section.Home)
-            ShowHome(items, now);
+            ShowHome(items, query, now);
         else if (_section == Section.Guide)
             ShowGuide(items.Select(i => i.Channel).ToList(), now);
         else
@@ -464,14 +467,17 @@ public sealed partial class MainWindow : Window
                 .ToList();
     }
 
-    private void ShowHome(List<(Channel Channel, EpgProgramme? Match)> items, DateTimeOffset now)
+    private void ShowHome(List<(Channel Channel, EpgProgramme? Match)> items, string query, DateTimeOffset now)
     {
+        var recent = RecentRows(query, now);
+        Fill(HomeRecentHeader, HomeRecent, recent);
         var rows = items.ConvertAll(i => new ChannelRow(i.Channel, GuideFor(i.Channel), now, true, _state.Watched.Contains(i.Channel.Id), i.Match));
         // M3U playlists list series episodes one by one; those count as series here, as in the Series section.
         Fill(HomeLiveHeader, HomeLive, rows.FindAll(r => r.Channel.Kind == MediaKind.Live));
         Fill(HomeMoviesHeader, HomeMovies, rows.FindAll(r => r.Channel.Kind == MediaKind.Movie));
         Fill(HomeSeriesHeader, HomeSeries, rows.FindAll(r => r.Channel.Kind is MediaKind.Series or MediaKind.Episode));
-        HomeEmpty.Visibility = rows.Count == 0 && _state.Favorites.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        HomeEmpty.Visibility = rows.Count == 0 && recent.Count == 0 && _state.Favorites.Count == 0 && _state.Recent.Count == 0
+            ? Visibility.Visible : Visibility.Collapsed;
 
         NowPlayingButton.Visibility = _playing is null ? Visibility.Collapsed : Visibility.Visible;
         NowPlayingText.Text = _playing?.Name ?? "";
@@ -483,10 +489,56 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    /// <summary>What was played last in the active source, newest first, filtered by the search.</summary>
+    private List<ChannelRow> RecentRows(string query, DateTimeOffset now)
+    {
+        if (Active is not { } source)
+            return [];
+        // The channel list has the current stream links; Xtream episodes are not in it, so those play from the saved copy.
+        var ids = _state.Recent.Select(c => c.Id).ToHashSet();
+        var current = new Dictionary<string, Channel>();
+        foreach (var c in _channels)
+        {
+            if (ids.Contains(c.Id))
+                current.TryAdd(c.Id, c);
+        }
+
+        var rows = new List<ChannelRow>();
+        foreach (var saved in _state.Recent)
+        {
+            if (saved.SourceId != source.Id)
+                continue;
+            var channel = current.GetValueOrDefault(saved.Id) ?? (saved.Kind == MediaKind.Episode ? saved : null);
+            if (channel is null || (query.Length > 0 && !channel.Name.Contains(query, StringComparison.CurrentCultureIgnoreCase)))
+                continue;
+            rows.Add(new ChannelRow(channel, GuideFor(channel), now, _state.Favorites.Contains(channel.Id), _state.Watched.Contains(channel.Id))
+            {
+                IsRecent = true,
+            });
+        }
+        return rows;
+    }
+
+    private void AddRecent(Channel channel)
+    {
+        if (IsSmokeTest)
+            return;
+        // An Xtream episode's group is its season; from the episode list, the series name says more on the home page.
+        if (channel.Kind == MediaKind.Episode && _episodesSeries is { } series && _episodes?.Contains(channel) == true)
+            channel = channel with { Group = series.Name };
+        _state.Recent.RemoveAll(c => c.Id == channel.Id);
+        _state.Recent.Insert(0, channel);
+        if (_state.Recent.Count > AppState.MaxRecent)
+            _state.Recent.RemoveRange(AppState.MaxRecent, _state.Recent.Count - AppState.MaxRecent);
+        _state.Save();
+        if (_section == Section.Home)
+            RefreshChannels(); // the next episode started while the home page is open
+    }
+
     private void OnHomeItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is ChannelRow row)
-            Open(row.Channel, favorites: true);
+            Open(row.Channel, favorites: !row.IsRecent);
     }
 
     private void OnBackToPlayer(object sender, RoutedEventArgs e)
@@ -495,11 +547,14 @@ public sealed partial class MainWindow : Window
             SectionList.SelectedIndex = (int)SectionOf(channel);
     }
 
-    private void OnRemoveFavorite(object sender, RoutedEventArgs e)
+    private void OnRemoveFromHome(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not ChannelRow row)
             return;
-        _state.Favorites.Remove(row.Channel.Id);
+        if (row.IsRecent)
+            _state.Recent.RemoveAll(c => c.Id == row.Channel.Id);
+        else
+            _state.Favorites.Remove(row.Channel.Id);
         _state.Save();
         RefreshChannels();
     }
@@ -601,6 +656,7 @@ public sealed partial class MainWindow : Window
         try
         {
             _episodes = await Task.Run(() => _loader.LoadEpisodesAsync(source, series.SeriesId));
+            _episodesSeries = series;
             BackLabel.Text = series.Name;
             SearchBox.Text = "";
             RefreshChannels();
@@ -679,6 +735,7 @@ public sealed partial class MainWindow : Window
             var resume = live ? 0 : _state.Resume.GetValueOrDefault(channel.Id);
             _player.Play(channel.StreamUrl, channel.UserAgent, channel.Referrer, resume);
             _playing = channel;
+            AddRecent(channel);
             _player.SetVisible(VideoShown); // the next episode can start while the home page or guide is open
             _reconnects = 0;
             SetPaused(false);

@@ -39,9 +39,11 @@ public static class Strings
     public static string NoGroup => T("No group", "Ohne Gruppe");
     public static string HideGroup => T("Hide group", "Gruppe ausblenden");
     public static string RemoveFavorite => T("Remove from favorites", "Aus Favoriten entfernen");
+    public static string RemoveRecent => T("Remove from recently watched", "Aus „Zuletzt angesehen“ entfernen");
+    public static string RecentlyWatched => T("Recently watched", "Zuletzt angesehen");
     public static string Favorite => T("Favorite", "Favorit");
-    public static string HomeEmpty => T("No favorites yet. Mark channels, movies or series with the star and they show up here.",
-        "Noch keine Favoriten. Markiere Sender, Filme oder Serien mit dem Stern, dann erscheinen sie hier.");
+    public static string HomeEmpty => T("Nothing here yet. What you watch shows up here, and so do channels, movies or series you mark with the star.",
+        "Noch nichts hier. Was du ansiehst, erscheint hier, ebenso Sender, Filme oder Serien, die du mit dem Stern markierst.");
 
     // ---------------------------------------------------------------- sidebar
 

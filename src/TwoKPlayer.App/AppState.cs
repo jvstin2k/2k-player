@@ -57,7 +57,7 @@ internal static class AtomicFile
     }
 }
 
-/// <summary>Per-user choices that outlive a session: favorites, hidden groups, resume positions, watched titles, volume, the source in use and the language.</summary>
+/// <summary>Per-user choices that outlive a session: favorites, hidden groups, resume positions, watched titles, recently played, volume, the source in use and the language.</summary>
 internal sealed class AppState
 {
     private static readonly string FilePath = Path.Combine(AppPaths.Root, "state.json");
@@ -72,6 +72,14 @@ internal sealed class AppState
 
     /// <summary>Movies and episodes watched to the end, by channel id.</summary>
     public HashSet<string> Watched { get; set; } = [];
+
+    /// <summary>
+    /// Live channels, movies and episodes last played, newest first, at most MaxRecent. Kept whole because
+    /// Xtream episodes are loaded on demand and are not in the channel list the home page draws from.
+    /// </summary>
+    public List<Channel> Recent { get; set; } = [];
+
+    public const int MaxRecent = 20;
 
     /// <summary>0 to 100, as mpv's volume property.</summary>
     public double Volume { get; set; } = 100;

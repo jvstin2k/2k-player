@@ -227,6 +227,10 @@
                 <Grid x:Name="InfoPanel" Grid.Row="1" Margin="0,12,0,0" Padding="16,12" CornerRadius="12" ColumnSpacing="16"
                       Background="{ThemeResource LayerFillColorDefaultBrush}"
                       BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
@@ -284,6 +288,20 @@
                             <FontIcon x:Name="FullScreenIcon" Glyph="&#xE740;" FontSize="16" />
                         </Button>
                     </StackPanel>
+                    <!-- Movies and episodes only: a live stream has no beginning or end to move between -->
+                    <Grid x:Name="TimelinePanel" Grid.Row="1" Grid.ColumnSpan="3" Margin="0,8,0,0" ColumnSpacing="12" Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="ElapsedText" Text="0:00" MinWidth="52" VerticalAlignment="Center"
+                                   Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <Slider x:Name="TimelineSlider" Grid.Column="1" Minimum="0" Maximum="1" StepFrequency="1" VerticalAlignment="Center"
+                                IsEnabled="False" />
+                        <TextBlock x:Name="DurationText" Grid.Column="2" Text="--:--" MinWidth="52" TextAlignment="Right" VerticalAlignment="Center"
+                                   Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </Grid>
                 </Grid>
             </Grid>
 
